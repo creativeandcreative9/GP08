@@ -3,7 +3,10 @@ import { ChunkedBatch, MeshBatch } from './batch';
 import type { Ctx } from './ctx';
 import { LOTS } from './layout';
 import { buildClouds } from './clouds';
+import { buildInfill } from './infill';
 import { buildLots } from './lots';
+import { SMALL_SHOPS } from './shops';
+import { OccGrid } from './site';
 import { buildPlaza, buildRailway, buildRoads, buildStation, buildCrossings } from './network';
 import { buildAvenues, buildForest, buildPoles, buildTrail } from './props';
 import { SignAtlas } from './signs';
@@ -42,14 +45,14 @@ export function buildTown(scene: Scene): Town {
   const t0 = performance.now();
   const root = new TransformNode('town', scene);
 
-  const labels = ['駅', '海辺の公園', '公園'];
+  const labels = ['駅', '海辺の公園', '公園', '体育館', 'アパート', 'マンション', ...SMALL_SHOPS];
   for (const l of LOTS) if (l.kind !== 'home' || l.floors >= 3) labels.push(l.label);
 
   const c: Ctx = {
     scene,
-    main: new ChunkedBatch(1800),
+    main: new ChunkedBatch(900),
     forest: new ChunkedBatch(1800),
-    signs: new ChunkedBatch(1800, true),
+    signs: new ChunkedBatch(900, true),
     dec0: new MeshBatch(),
     dec1: new MeshBatch(),
     dec2: new MeshBatch(),
@@ -78,8 +81,14 @@ export function buildTown(scene: Scene): Town {
   buildStation(c);
   buildPlaza(c);
   mark('station+plaza');
-  buildLots(c);
+  const reserved = buildLots(c);
   mark('lots');
+  const grid = OccGrid.build({ minX: -3900, maxX: 4450, minZ: -3350, maxZ: 3050 }, 10);
+  for (const p of reserved) grid.claim(p, 2);
+  for (const o of c.obstacles) grid.claim(o, 7);
+  const infill = buildInfill(c, grid);
+  c.report.push(`infill: ${infill.houses} houses, ${infill.shops} small shops, ${infill.apartments} apartment blocks, ${infill.parking} parking lots`);
+  mark('infill');
   const summit = buildSummit(c);
   const trail = buildTrail(c);
   mark('summit');

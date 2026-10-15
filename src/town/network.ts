@@ -2,6 +2,7 @@ import { MeshBatch, beam } from './batch';
 import { DEC0_Y, DEC1_Y, DEC2_Y, DEC3_Y, type Ctx } from './ctx';
 import { Frame } from './frame';
 import { plazaW, railW, RAIL_HALF, roadClearance, roadsW, stationRect, type Pt } from './site';
+import { PLATFORM, platformObstacles } from './platform';
 import { heightAt } from './terrain';
 import { hex, type RGB, type V3 } from './util';
 
@@ -257,6 +258,25 @@ export function buildStation(c: Ctx): void {
   // platforms
   b.box(x0, x1, 0, h, 628, 780, CONCRETE, { top: hex(0xe3e0d8) });
   b.box(x0, x1, 0, h, 828, 980, CONCRETE, { top: hex(0xe3e0d8) });
+  // ramps: the west ends of both platforms and a ramp from the plaza onto the south platform
+  const conc = hex(0xd9d6ce);
+  const up: V3 = [0, 1, 0];
+  const rx0 = x0 - PLATFORM.rampLen;
+  for (const [za, zb] of [[628, 780], [828, 980]] as [number, number][]) {
+    b.quad([rx0, 0.2, za], [rx0, 0.2, zb], [x0, h, zb], [x0, h, za], hex(0xe3e0d8), up);
+    b.tri([rx0, 0.2, za], [x0, 0.2, za], [x0, h, za], conc, [0, 0, -1]);
+    b.tri([rx0, 0.2, zb], [x0, h, zb], [x0, 0.2, zb], conc, [0, 0, 1]);
+    // yellow edge line along the top of the ramp
+    b.box(x0 - 3, x0 - 1, h - 0.1, h + 0.3, za, zb, YELLOW);
+  }
+  const pr = PLATFORM.plazaRamp;
+  const pz0 = pr.z0;
+  b.quad([pr.x0, 0.2, pz0], [pr.x1, 0.2, pz0], [pr.x1, h, 628], [pr.x0, h, 628], hex(0xe3e0d8), up);
+  b.tri([pr.x0, 0.2, pz0], [pr.x0, h, 628], [pr.x0, 0.2, 628], conc, [-1, 0, 0]);
+  b.tri([pr.x1, 0.2, pz0], [pr.x1, 0.2, 628], [pr.x1, h, 628], conc, [1, 0, 0]);
+  b.box(pr.x0, pr.x1, h - 0.1, h + 0.3, 629, 631, YELLOW);
+  // low guard walls along the platform edges that have no access (solid for the player via obstacles)
+  c.obstacles.push(...platformObstacles());
   // yellow safety lines (real geometry: the platform tops are above the decal layers)
   b.box(x0, x1, h, h + 0.35, 770, 774, YELLOW);
   b.box(x0, x1, h, h + 0.35, 834, 838, YELLOW);
@@ -344,7 +364,7 @@ export function buildStation(c: Ctx): void {
     b.box(bx - 14, bx + 14, h, 76, zz - 14, zz + 14, hex(0xcfd6e0));
     b.box(bx - 16, bx + 16, 76, 80, zz - 16, zz + 16, hex(0x4d78b0));
   }
-  c.obstacles.push({ minX: bx - 14, maxX: bx + 14, minZ: 626, maxZ: 654 });
+  c.obstacles.push({ minX: bx - 14, maxX: bx + 14, minZ: 626, maxZ: 654 }, { minX: bx - 14, maxX: bx + 14, minZ: 954, maxZ: 982 });
 }
 
 export function buildPlaza(c: Ctx): void {

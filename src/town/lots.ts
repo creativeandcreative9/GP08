@@ -36,10 +36,12 @@ function frameFor(r: Rect): { f: Frame; hu: number; hv: number } {
 
 const area = (r: Rect): number => (r.maxX - r.minX) * (r.maxZ - r.minZ);
 
-export function buildLots(c: Ctx): void {
+/** Builds the named lots; returns the grounds (parks, campuses) that infill must not use. */
+export function buildLots(c: Ctx): Rect[] {
   const priority: Record<Lot['kind'], number> = { public: 0, park: 1, shop: 2, home: 3 };
   const lots = [...LOTS].sort((a, b) => priority[a.kind] - priority[b.kind]);
   const claimed: Rect[] = [];
+  const reserved: Rect[] = []; // grounds that infill must leave alone (parks, campuses)
   const stats = { houses: 0, apartments: 0, shops: 0, publics: 0, parks: 0 };
 
   for (const lot of lots) {
@@ -61,6 +63,7 @@ export function buildLots(c: Ctx): void {
 
     res.pieces.forEach((piece, pi) => {
       claimed.push(piece);
+      if (lot.kind === 'park' || lot.kind === 'public') reserved.push(piece);
       pad(c, piece, PAD[lot.kind]);
       const { f, hu, hv } = frameFor(piece);
       if (lot.kind === 'park') {
@@ -69,22 +72,25 @@ export function buildLots(c: Ctx): void {
           stats.parks++;
         }
       } else if (lot.kind === 'public') {
-        if (pi === 0) {
+        if (pi === 0 && lot.id !== 'highschool-gym') {
           const hu2 = hu - 12;
           const hv2 = hv - 14;
           if (lot.label === '銀行') addBank(c, lot, piece, f, Math.min(hu2, 140), Math.min(hv2, 90));
           else if (lot.label === '病院') addHospital(c, lot, piece, f, hu2, hv2);
           else addCampus(c, lot, piece, f, hu2, hv2);
           stats.publics++;
+        } else if (lot.id === 'highschool-gym') {
+          addGym(c, f, hu - 6, hv - 6, lot.label);
+          stats.publics++;
         } else if (area(piece) > 20000) {
-          addGym(c, f, hu - 12, hv - 12);
+          addGym(c, f, hu - 12, hv - 12, '体育館');
         } else {
           const p = f.pt(0, 0, 0);
           addCherry(c, p[0], p[2], 1);
         }
       } else if (lot.kind === 'shop') {
-        const hu2 = Math.min(hu - 8, lot.floors >= 5 ? 150 : 190);
-        const hv2 = Math.min(hv - 10, lot.floors === 1 ? 90 : lot.floors >= 5 ? 100 : 105);
+        const hu2 = Math.min(hu - 3, lot.floors >= 5 ? 170 : 260);
+        const hv2 = Math.min(hv - 4, lot.floors === 1 ? 100 : lot.floors >= 5 ? 110 : 125);
         if (hu2 < 40 || hv2 < 30) {
           c.report.push(`shop ${lot.id} too small after clipping, skipped`);
           return;
@@ -115,18 +121,18 @@ export function buildLots(c: Ctx): void {
         // detached houses side by side
         const L = hu * 2;
         const depth = hv * 2;
-        let n = Math.max(1, Math.round((L + 24) / (122 + 24)));
+        let n = Math.max(1, Math.round((L + 24) / (126 + 24)));
         while (n > 1 && (L - 24 * (n - 1)) / n < 80) n--;
         const slot = (L - 24 * (n - 1)) / n;
-        const hw = Math.min(slot - 24, 135) / 2;
+        const hw = Math.min(slot - 24, 150) / 2;
         if (hw < 34) {
           c.report.push(`home ${lot.id} piece too narrow, skipped`);
           return;
         }
-        const hd = Math.min(depth - 28, 112) / 2;
+        const hd = Math.min(depth - 24, 124) / 2;
         for (let i = 0; i < n; i++) {
           const uc = -hu + slot / 2 + i * (slot + 24);
-          const vc = hv - 16 - hd;
+          const vc = hv - 12 - hd;
           const p = f.pt(uc, 0, vc);
           const fh = new Frame(p[0], p[2], f.fx, f.fz);
           const rect = frameRect(fh, -hw, hw, -hd, hd);
@@ -136,5 +142,6 @@ export function buildLots(c: Ctx): void {
       }
     });
   }
-  c.report.push(`buildings: ${stats.houses} houses, ${stats.apartments} apartment blocks, ${stats.shops} shops, ${stats.publics} public, ${stats.parks} parks`);
+  c.report.push(`named lots: ${stats.houses} houses, ${stats.apartments} apartment blocks, ${stats.shops} shops, ${stats.publics} public, ${stats.parks} parks`);
+  return reserved;
 }

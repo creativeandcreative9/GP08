@@ -12,7 +12,7 @@ export interface RoadW {
   width: number;
 }
 
-const EXTEND = 2500;
+const EXTEND = 520;
 
 function extendEnds(pts: Pt[], atStart: boolean, atEnd: boolean): Pt[] {
   const out = pts.slice();
@@ -105,8 +105,8 @@ export type BlockReason = 'road' | 'rail' | 'station' | 'plaza' | 'sea' | 'mount
 
 /** Why a building may not stand at (x,z) (undefined = free). Margins leave room for sidewalks/fences. */
 export function siteBlock(x: number, z: number): BlockReason | undefined {
-  if (coastS(x, z) > -(BEACH_WIDTH + 24)) return 'sea';
-  if (roadClearance(x, z).d < 20) return 'road';
+  if (coastS(x, z) > -(BEACH_WIDTH + 14)) return 'sea';
+  if (roadClearance(x, z).d < 15) return 'road';
   if (railDistance(x, z) < RAIL_HALF + 18) return 'rail';
   const sr = stationRect;
   if (x > sr.minX - 14 && x < sr.maxX + 14 && z > sr.minZ - 14 && z < sr.maxZ + 14) return 'station';
@@ -201,4 +201,56 @@ export function freeRects(
 export function insideAny(x: number, z: number, rects: readonly Rect[], m: number): boolean {
   for (const r of rects) if (x > r.minX - m && x < r.maxX + m && z > r.minZ - m && z < r.maxZ + m) return true;
   return false;
+}
+
+/**
+ * Occupancy grid over (a margin around) the town: cells blocked by the site rules (roads, rail, sea, mountain,
+ * plaza, station) or already claimed by buildings. Used to find room for infill buildings quickly.
+ */
+export class OccGrid {
+  private constructor(
+    readonly minX: number,
+    readonly minZ: number,
+    readonly nx: number,
+    readonly nz: number,
+    readonly cell: number,
+    readonly data: Uint8Array,
+  ) {}
+
+  static build(bounds: Rect, cell = 10): OccGrid {
+    const nx = Math.ceil((bounds.maxX - bounds.minX) / cell);
+    const nz = Math.ceil((bounds.maxZ - bounds.minZ) / cell);
+    const data = new Uint8Array(nx * nz);
+    for (let j = 0; j < nz; j++) {
+      for (let i = 0; i < nx; i++) {
+        const x = bounds.minX + (i + 0.5) * cell;
+        const z = bounds.minZ + (j + 0.5) * cell;
+        if (siteBlock(x, z)) data[j * nx + i] = 1;
+      }
+    }
+    return new OccGrid(bounds.minX, bounds.minZ, nx, nz, cell, data);
+  }
+
+  private range(r: Rect, infl: number): [number, number, number, number] | null {
+    const i0 = Math.floor((r.minX - infl - this.minX) / this.cell);
+    const i1 = Math.floor((r.maxX + infl - this.minX) / this.cell);
+    const j0 = Math.floor((r.minZ - infl - this.minZ) / this.cell);
+    const j1 = Math.floor((r.maxZ + infl - this.minZ) / this.cell);
+    if (i0 < 0 || j0 < 0 || i1 >= this.nx || j1 >= this.nz) return null;
+    return [i0, i1, j0, j1];
+  }
+
+  /** True if every cell touched by the rectangle (grown by `infl`) is free. */
+  free(r: Rect, infl: number): boolean {
+    const g = this.range(r, infl);
+    if (!g) return false;
+    for (let j = g[2]; j <= g[3]; j++) for (let i = g[0]; i <= g[1]; i++) if (this.data[j * this.nx + i]) return false;
+    return true;
+  }
+
+  claim(r: Rect, infl: number): void {
+    const g = this.range(r, infl);
+    if (!g) return;
+    for (let j = g[2]; j <= g[3]; j++) for (let i = g[0]; i <= g[1]; i++) this.data[j * this.nx + i] = 1;
+  }
 }

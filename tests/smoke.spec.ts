@@ -59,8 +59,10 @@ test('the player walks with the W key', async ({ page }) => {
   await page.goto('/?model=fubuki');
   await page.waitForFunction(() => window.__gp08?.ready === true && !!window.__gp08.player, null, { timeout: 200_000 });
   const start = await page.evaluate(() => ({ x: window.__gp08.player!.position.x, z: window.__gp08.player!.position.z }));
+  // Wait for a number of rendered frames rather than wall time: software rendering can be very slow.
+  const frames = await page.evaluate(() => window.__gp08.frames);
   await page.keyboard.down('KeyW');
-  await page.waitForTimeout(1500);
+  await page.waitForFunction((f) => window.__gp08.frames >= f + 20, frames, { timeout: 120_000 });
   const speed = await page.evaluate(() => window.__gp08.player!.currentSpeed);
   await page.keyboard.up('KeyW');
   const end = await page.evaluate(() => ({ x: window.__gp08.player!.position.x, z: window.__gp08.player!.position.z }));

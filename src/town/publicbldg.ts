@@ -1,6 +1,6 @@
 import type { Ctx } from './ctx';
 import { DEC1_Y, DEC2_Y, DEC3_Y } from './ctx';
-import type { Frame } from './frame';
+import { Frame } from './frame';
 import type { Lot } from './layout';
 import { addCherry } from './trees';
 import { windowGrid, windowOn, roofSign, signOnFace, parapet, rooftopStuff, GLASS } from './parts';
@@ -229,18 +229,28 @@ export function addCampus(c: Ctx, lot: Lot, _rect: Rect, f: Frame, hu: number, h
   roofSign(c, f, lot.label, 0, H + 8, 170, 42.5, -hv + 12, hex(school ? 0x1f5a36 : 0x1d2f6b));
 }
 
-/** Second building on a split public lot: a gymnasium with a low arched roof. */
-export function addGym(c: Ctx, f: Frame, hu: number, hv: number): void {
+/** Gymnasium with a low arched roof and a sports ground, for the school's second lot. */
+export function addGym(c: Ctx, f: Frame, hu: number, hv: number, label: string): void {
   const b = c.main.at(f.cx, f.cz);
   const wall = hex(0xe6e2d6);
   const H = 4 + 56;
-  f.box(b, -hu * 0.8, hu * 0.8, 0, H, -hv * 0.7, hv * 0.7, wall);
-  f.gable(b, -hu * 0.8, hu * 0.8, -hv * 0.7, hv * 0.7, H, 22, hu >= hv ? 'u' : 'v', 5, hex(0x6c7f9a), wall);
-  for (let i = 0; i < 6; i++) {
-    const u = -hu * 0.8 + ((i + 0.5) * hu * 1.6) / 6;
-    windowOn(b, f, hu * 0.8, hv * 0.7, 'f', u, 34, 22, 14, GLASS);
-    windowOn(b, f, hu * 0.8, hv * 0.7, 'b', u, 34, 22, 14, GLASS);
+  const gu = Math.min(hu * 0.8, 150);
+  const gv = Math.min(hv * 0.8, 105);
+  const bv = hv - gv - 10; // gym at the front, sports ground behind
+  const q = (u0: number, u1: number, v0: number, v1: number, col: RGB): void =>
+    c.dec1.quad(f.pt(u0, DEC1_Y, v0), f.pt(u1, DEC1_Y, v0), f.pt(u1, DEC1_Y, v1), f.pt(u0, DEC1_Y, v1), col, [0, 1, 0]);
+  q(-hu, hu, -hv, bv - gv - 12, hex(0xdcc08f));
+  const gc = f.pt(0, 0, bv);
+  const g2 = new Frame(gc[0], gc[2], f.fx, f.fz);
+  g2.box(b, -gu, gu, 0, H, -gv, gv, wall);
+  g2.gable(b, -gu, gu, -gv, gv, H, 22, 'u', 5, hex(0x6c7f9a), wall);
+  const n = Math.max(2, Math.floor((gu * 2) / 40));
+  for (let i = 0; i < n; i++) {
+    const u = -gu + ((i + 0.5) * gu * 2) / n;
+    windowOn(b, g2, gu, gv, 'f', u, 34, 22, 14, GLASS);
+    windowOn(b, g2, gu, gv, 'b', u, 34, 22, 14, GLASS);
   }
-  f.facade(b, -14, 14, 4, 30, hv * 0.7 + 0.6, 1, hex(0x4a5a6a));
-  c.obstacles.push(frameRect(f, -hu * 0.8, hu * 0.8, -hv * 0.7, hv * 0.7));
+  g2.facade(b, -14, 14, 4, 30, gv + 0.6, 1, hex(0x4a5a6a));
+  roofSign(c, g2, label, 0, H + 26, 170, 42.5, gv - 6, hex(0x4a6f9a));
+  c.obstacles.push(frameRect(g2, -gu, gu, -gv, gv));
 }

@@ -121,3 +121,47 @@ export function addApartment(c: Ctx, rect: Rect, f: Frame, hu: number, hv: numbe
   }
   c.obstacles.push(rect);
 }
+
+/** A cheaper house for dense infill (about a third of the vertices of `addHouse`). */
+export function addHouseLite(c: Ctx, rect: Rect, f: Frame, hu: number, hv: number, floors: number): void {
+  const b = c.main.at(f.cx, f.cz);
+  const r = c.rnd;
+  const wall = pick(WALLS, r);
+  const roof = pick(ROOFS, r);
+  const floorH = 35;
+  const eave = 3 + floors * floorH;
+  f.box(b, -hu, hu, 0, eave, -hv, hv, wall);
+  const ridge = (hu >= hv) !== (r() < 0.2) ? 'u' : 'v';
+  const span = ridge === 'u' ? hv : hu;
+  f.gable(b, -hu, hu, -hv, hv, eave, Math.max(12, Math.min(30, span * 0.6)), ridge, 6, roof, wall);
+  const glass = GLASS;
+  const gw = (face: 'f' | 'b' | 'l' | 'r', pos: number, y: number): void => {
+    const hw = 7;
+    if (face === 'f') f.facade(b, pos - hw, pos + hw, y, y + 18, hv + 0.5, 1, glass);
+    else if (face === 'l') f.side(b, pos - hw, pos + hw, y, y + 18, -hu - 0.5, -1, glass);
+    else if (face === 'r') f.side(b, pos - hw, pos + hw, y, y + 18, hu + 0.5, 1, glass);
+    else f.facade(b, pos - hw, pos + hw, y, y + 18, -hv - 0.5, -1, glass);
+  };
+  const doorU = (r() < 0.5 ? -1 : 1) * hu * 0.4;
+  f.facade(b, doorU - 6, doorU + 6, 3, 27, hv + 0.5, 1, pick([hex(0x8a5a3a), hex(0x3f5f8a), hex(0x2f6f55), hex(0x9a3f3f)], r));
+  gw('f', -doorU, 10);
+  for (let fl = 1; fl < floors; fl++) {
+    const y = 3 + fl * floorH + 8;
+    gw('f', -hu * 0.45, y);
+    gw('f', hu * 0.45, y);
+  }
+  for (let fl = 0; fl < floors; fl++) {
+    const y = 3 + fl * floorH + 9;
+    gw('l', 0, y);
+    gw('r', 0, y);
+  }
+  // front block wall with a gate gap
+  const wallCol = WALL_GREY;
+  f.box(b, -hu - 5, doorU - 13, 0, 12, hv + 9, hv + 11.5, wallCol);
+  f.box(b, doorU + 13, hu + 5, 0, 12, hv + 9, hv + 11.5, wallCol);
+  const t = r();
+  const tp = f.pt((r() < 0.5 ? -1 : 1) * (hu - 8), 0, hv + 5);
+  if (t < 0.06) addCherry(c, tp[0], tp[2], 0.7);
+  else if (t < 0.3) b.blob(tp[0], 6, tp[2], 8, 6, 7, GREEN_LEAF, 0.1, tp[0]);
+  c.obstacles.push(rect);
+}

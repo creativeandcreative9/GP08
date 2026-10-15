@@ -55,7 +55,7 @@ function createSky(scene: Scene): Mesh {
   return sky;
 }
 
-type View = 'overview' | 'street' | 'summit' | 'default';
+type View = 'overview' | 'street' | 'summit' | 'platform' | 'default';
 
 function applyView(camera: ArcRotateCamera, scene: Scene, town: Town, view: View): void {
   const groundY = (x: number, z: number): number => town.heightAt(x, z);
@@ -73,6 +73,14 @@ function applyView(camera: ArcRotateCamera, scene: Scene, town: Town, view: View
       const eye = new Vector3(SPAWN.x, groundY(SPAWN.x, SPAWN.z) + 18, SPAWN.z);
       camera.upperBetaLimit = Math.PI / 2 + 0.3;
       camera.setTarget(new Vector3(eye.x, eye.y, eye.z + 40));
+      camera.setPosition(eye);
+      break;
+    }
+    case 'platform': {
+      // standing on the near platform, looking west along the track
+      const eye = new Vector3(330, groundY(330, 745) + 18, 745);
+      camera.upperBetaLimit = Math.PI / 2 + 0.3;
+      camera.setTarget(new Vector3(eye.x - 40, eye.y - 3, eye.z + 6));
       camera.setPosition(eye);
       break;
     }
@@ -128,8 +136,9 @@ export function createScene(engine: Engine, canvas: HTMLCanvasElement): GameScen
   const town = buildTown(scene);
   for (const line of town.report) console.info(`[town] ${line}`);
 
+  scene.metadata = { ...(scene.metadata ?? {}), town };
   const q = new URLSearchParams(location.search).get('view');
-  const view: View = q === 'overview' || q === 'street' || q === 'summit' ? q : 'default';
+  const view: View = q === 'overview' || q === 'street' || q === 'summit' || q === 'platform' ? q : 'default';
   applyView(camera, scene, town, view);
 
   return { scene, camera, town };

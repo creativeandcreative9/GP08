@@ -152,7 +152,7 @@ export function buildForest(c: Ctx, avoid: readonly { x: number; z: number }[]):
   const x1 = -2300;
   const z0 = S.z - 3000;
   const z1 = -380;
-  const step = 105;
+  const step = 120;
   for (let x = x0; x < x1; x += step) {
     for (let z = z0; z < z1; z += step) {
       const px = x + (rnd() - 0.5) * step * 0.9;

@@ -27,6 +27,19 @@ const STYLES: Record<string, ShopStyle> = {
   すし: { wall: 0xeadfcd, tile: true, sign: 0x1d3a73 },
   スーパー: { wall: 0xfdf5e0, awning: [0xf08a1c, 0xffffff], sign: 0xf08a1c },
   ごはん屋: { wall: 0xf3e0c2, tile: true, sign: 0x7a4a28 },
+  美容室: { wall: 0xfbe9f0, awning: [0xf2a6c4, 0xffffff], sign: 0xf2a6c4 },
+  薬局: { wall: 0xf4f8f4, awning: [0x1f9a58, 0xffffff], sign: 0xffffff },
+  居酒屋: { wall: 0xe8d6bc, tile: true, sign: 0x3a1c14 },
+  八百屋: { wall: 0xeaf3dc, awning: [0x3f9a3f, 0xffe066], sign: 0x3f9a3f },
+  クリーニング: { wall: 0xe8f1fa, awning: [0x2f7fd0, 0xffffff], sign: 0x2f7fd0 },
+  理容室: { wall: 0xf4f4f0, awning: [0xc8281e, 0x2f5fb0], sign: 0xffffff },
+  焼肉: { wall: 0xdcd2c8, awning: [0x2a2a2e, 0xc8281e], sign: 0x1c1c22 },
+  パン屋: { wall: 0xf8ecd0, awning: [0xc8863a, 0xffffff], sign: 0xf4d9a8 },
+  医院: { wall: 0xf4f8fb, awning: [0x3aa6d8, 0xffffff], sign: 0xffffff },
+  歯科: { wall: 0xeef8f6, awning: [0x4cc4b8, 0xffffff], sign: 0xe6f6f4 },
+  学習塾: { wall: 0xe8eaf4, awning: [0x2f3f8a, 0xffd24a], sign: 0x2f3f8a },
+  酒屋: { wall: 0xe6d6d0, tile: true, sign: 0x5a2a3a },
+  定食屋: { wall: 0xf0dcc0, tile: true, sign: 0x8a5a2f },
 };
 
 function awning(b: MeshBatch, f: Frame, hu: number, hv: number, y: number, out: number, cols: [number, number]): void {
@@ -165,3 +178,6 @@ export function addHotel(c: Ctx, lot: Lot, rect: Rect, f: Frame, hu: number, hv:
   signOnFace(c, f, lot.label, 0, 46, 92, 23, hv + 0.8, 1);
   c.obstacles.push(rect);
 }
+
+/** Labels used for small infill shops (all must exist in the sign atlas). */
+export const SMALL_SHOPS: readonly string[] = ['美容室', '薬局', '居酒屋', '八百屋', 'クリーニング', '理容室', '焼肉', 'パン屋', '医院', '歯科', '学習塾', '酒屋', '定食屋', 'カフェ', 'ラーメン', '花屋'];
