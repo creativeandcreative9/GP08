@@ -1,0 +1,12 @@
+node_modules/
+dist/
+private-assets/
+screenshots/
+test-results/
+playwright-report/
+*.pmx
+*.pmd
+*.vmd
+*.vpd
+*.zip
+.DS_Store
