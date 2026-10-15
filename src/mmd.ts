@@ -43,6 +43,9 @@ export async function createMmdRuntime(scene: Scene): Promise<MmdRuntime> {
   const wasm = await GetMmdWasmInstance(new MmdWasmInstanceTypeSPR());
   const physicsRuntime = new MultiPhysicsRuntime(wasm);
   physicsRuntime.setGravity(new Vector3(0, -98, 0));
+  // Keep hair and skirt stable when the frame rate drops (e.g. software rendering): more, fixed sub-steps.
+  physicsRuntime.fixedTimeStep = 1 / 120;
+  physicsRuntime.maxSubSteps = 12;
   physicsRuntime.register(scene);
 
   const runtime = new MmdRuntime(scene, new MmdBulletPhysics(physicsRuntime));
@@ -50,8 +53,13 @@ export async function createMmdRuntime(scene: Scene): Promise<MmdRuntime> {
   return runtime;
 }
 
+/** URL of a file in the private asset pack, served by the dev/preview server. */
+export function modelUrl(path: string): string {
+  return `/private/${path.split('/').map(encodeURIComponent).join('/')}`;
+}
+
 export async function loadMmdModel(scene: Scene, runtime: MmdRuntime, key: ModelKey): Promise<MmdModel> {
-  const url = `/private/${MODELS[key].split('/').map(encodeURIComponent).join('/')}`;
+  const url = modelUrl(MODELS[key]);
   const container = await LoadAssetContainerAsync(url, scene, { pluginExtension: '.pmx' });
   container.addAllToScene();
   const mesh = container.meshes[0] as MmdMesh;

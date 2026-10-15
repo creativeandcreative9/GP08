@@ -1,11 +1,13 @@
 import './style.css';
 import { Engine, type Scene } from '@babylonjs/core';
 import { createScene } from './scene';
-import { createMmdRuntime, isModelKey, loadMmdModel, prepareEngineForMmd } from './mmd';
+import { createMmdRuntime, isModelKey, loadMmdModel, MODELS, modelUrl, prepareEngineForMmd } from './mmd';
+import { Player, type Footprint } from './player/player';
+import { SPAWN } from './town/layout';
 
 declare global {
   interface Window {
-    __gp08: { ready: boolean; frames: number; errors: string[]; scene?: Scene };
+    __gp08: { ready: boolean; frames: number; errors: string[]; scene?: Scene; player?: Player };
   }
 }
 
@@ -21,27 +23,42 @@ function main(): void {
 
   const engine = new Engine(canvas, true, { preserveDrawingBuffer: true, stencil: true });
   prepareEngineForMmd(engine);
-  const { scene, camera } = createScene(engine, canvas);
+  const game = createScene(engine, canvas);
+  const { scene, camera } = game;
   if (import.meta.env.DEV) window.__gp08.scene = scene; // for debugging from tests/tools
+  const town = (game as { town?: { heightAt(x: number, z: number): number; obstacles: readonly Footprint[] } }).town;
 
-  // ?model=fubuki loads a model from the private asset pack (dev/preview only).
-  const modelKey = new URLSearchParams(location.search).get('model');
-  let modelReady = modelKey === null;
-  if (modelKey !== null) {
-    if (!isModelKey(modelKey)) throw new Error(`unknown model: ${modelKey}`);
-    void (async () => {
-      const runtime = await createMmdRuntime(scene);
-      await loadMmdModel(scene, runtime, modelKey);
-      camera.target.set(0, 10, 0);
-      camera.radius = 32;
-      scene.executeWhenReady(() => {
-        modelReady = true;
-      });
-    })().catch((e: unknown) => {
-      window.__gp08.errors.push(String(e));
-      console.error(e);
+  // The player character comes from the private asset pack (dev/preview only).
+  // ?model=<key> picks a model (error if missing), ?model=none disables it,
+  // no parameter = Fubuki when the pack is available, otherwise no character.
+  const param = new URLSearchParams(location.search).get('model');
+  let modelReady = param === 'none';
+  void (async () => {
+    if (param === 'none') return;
+    const key = param ?? 'fubuki';
+    if (!isModelKey(key)) throw new Error(`unknown model: ${key}`);
+    if (param === null && !(await fetch(modelUrl(MODELS[key]), { method: 'HEAD' })).ok) {
+      modelReady = true; // no private assets here: run without the character
+      return;
+    }
+    const runtime = await createMmdRuntime(scene);
+    const model = await loadMmdModel(scene, runtime, key);
+    const player = new Player({
+      scene,
+      camera,
+      model,
+      spawn: SPAWN,
+      heightAt: town ? (x, z) => town.heightAt(x, z) : undefined,
+      obstacles: town?.obstacles,
     });
-  }
+    if (import.meta.env.DEV) window.__gp08.player = player;
+    scene.executeWhenReady(() => {
+      modelReady = true;
+    });
+  })().catch((e: unknown) => {
+    window.__gp08.errors.push(String(e));
+    console.error(e);
+  });
 
   let sceneReady = false;
   scene.executeWhenReady(() => {

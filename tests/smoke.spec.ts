@@ -11,7 +11,7 @@ test('page loads, scene is ready, canvas is not blank', async ({ page }) => {
     if (m.type() === 'error') consoleErrors.push(m.text());
   });
 
-  await page.goto('/');
+  await page.goto('/?model=none');
   await page.waitForFunction(() => window.__gp08?.ready === true, null, { timeout: 60_000 });
   await page.waitForTimeout(500);
 
@@ -48,4 +48,24 @@ test('MMD model (Fubuki) loads with its materials and textures', async ({ page }
       window.__gp08.scene!.materials.filter((m) => (m as { diffuseTexture?: unknown }).diffuseTexture).length,
   );
   expect(textured).toBeGreaterThan(10);
+});
+
+test('the player walks with the W key', async ({ page }) => {
+  test.skip(!hasModels, 'private-assets/seisen not found');
+  test.setTimeout(240_000);
+  const pageErrors: string[] = [];
+  page.on('pageerror', (e) => pageErrors.push(e.message));
+
+  await page.goto('/?model=fubuki');
+  await page.waitForFunction(() => window.__gp08?.ready === true && !!window.__gp08.player, null, { timeout: 200_000 });
+  const start = await page.evaluate(() => window.__gp08.player!.position.clone());
+  await page.keyboard.down('KeyW');
+  await page.waitForTimeout(1500);
+  const speed = await page.evaluate(() => window.__gp08.player!.currentSpeed);
+  await page.keyboard.up('KeyW');
+  const end = await page.evaluate(() => window.__gp08.player!.position.clone());
+
+  expect(pageErrors).toEqual([]);
+  expect(speed).toBeGreaterThan(10);
+  expect(Math.hypot(end.x - start.x, end.z - start.z)).toBeGreaterThan(5);
 });
