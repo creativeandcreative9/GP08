@@ -1,6 +1,7 @@
 import type { MeshBatch } from './batch';
 import type { Ctx } from './ctx';
 import type { Frame } from './frame';
+import { HB, Wall, tone } from './housekit';
 import { hex, type RGB } from './util';
 
 export const GLASS = hex(0x9fd0ee);
@@ -11,24 +12,26 @@ export const GREEN_LEAF = hex(0x6cb855);
 
 export type Face = 'f' | 'b' | 'l' | 'r';
 
-/** A window (sash + glass) on one face of a frame-aligned box with half extents hu, hv. */
+/**
+ * A window (sash + glass) on one face of a frame-aligned box with half extents hu, hv. Wide windows get two sliding panes
+ * with the mullion between them; the glass fades from darker at the sill to lighter at the head (the sky in it).
+ * Quads are indexed (see housekit), so a window costs 8-12 vertices.
+ */
 export function windowOn(
   b: MeshBatch, f: Frame, hu: number, hv: number, face: Face,
   pos: number, y: number, w: number, h: number, glass: RGB = GLASS, sash: RGB = SASH,
 ): void {
-  const o1 = 0.5;
-  const o2 = 0.9;
+  const wall = new Wall(new HB(b, f), face, hu, hv);
   const hw = w / 2;
-  if (face === 'f' || face === 'b') {
-    const dir = face === 'f' ? 1 : -1;
-    const v = (face === 'f' ? hv : -hv) * 1;
-    f.facade(b, pos - hw, pos + hw, y, y + h, v + dir * o1, dir, sash);
-    f.facade(b, pos - hw + 1.6, pos + hw - 1.6, y + 1.6, y + h - 1.6, v + dir * o2, dir, glass);
+  const fw = 1.6;
+  const lo = tone(glass, 0.84);
+  const hi = tone(glass, 1.06);
+  wall.q(pos - hw, pos + hw, y, y + h, 0.5, tone(sash, 0.92), sash);
+  if (w >= 14) {
+    wall.q(pos - hw + fw, pos - 0.6, y + fw, y + h - fw, 0.9, lo, hi);
+    wall.q(pos + 0.6, pos + hw - fw, y + fw, y + h - fw, 0.9, tone(lo, 0.95), tone(hi, 0.95));
   } else {
-    const dir = face === 'r' ? 1 : -1;
-    const u = (face === 'r' ? hu : -hu) * 1;
-    f.side(b, pos - hw, pos + hw, y, y + h, u + dir * o1, dir, sash);
-    f.side(b, pos - hw + 1.6, pos + hw - 1.6, y + 1.6, y + h - 1.6, u + dir * o2, dir, glass);
+    wall.q(pos - hw + fw, pos + hw - fw, y + fw, y + h - fw, 0.9, lo, hi);
   }
 }
 
@@ -73,36 +76,51 @@ export function signOnFace(
 
 /** A free-standing rooftop signboard (box with the sign on front and back). */
 export function roofSign(c: Ctx, f: Frame, label: string, uc: number, yBase: number, w: number, h: number, v: number, body: RGB): void {
-  const b = c.main.at(f.cx, f.cz);
-  f.box(b, uc - w / 2 - 2, uc + w / 2 + 2, yBase, yBase + h + 2, v - 2.5, v + 2.5, body);
+  const hb = new HB(c.main.at(f.cx, f.cz), f);
+  hb.box(uc - w / 2 - 2, uc + w / 2 + 2, yBase, yBase + h + 2, v - 2.5, v + 2.5, body, 'fblrt');
   // support legs
-  f.box(b, uc - w / 2 + 6, uc - w / 2 + 10, yBase - 4, yBase, v - 1, v + 1, hex(0x555a62));
-  f.box(b, uc + w / 2 - 10, uc + w / 2 - 6, yBase - 4, yBase, v - 1, v + 1, hex(0x555a62));
+  const leg = hex(0x555a62);
+  hb.box(uc - w / 2 + 6, uc - w / 2 + 10, yBase - 4, yBase, v - 1, v + 1, leg, 'fblr');
+  hb.box(uc + w / 2 - 10, uc + w / 2 - 6, yBase - 4, yBase, v - 1, v + 1, leg, 'fblr');
   signOnFace(c, f, label, uc, yBase + 1, w, h, v + 2.6, 1);
   signOnFace(c, f, label, uc, yBase + 1, w, h, v - 2.6, -1);
 }
 
+/** Roof-edge wall (パラペット): outer and inner faces and the top, 2.5 thick. */
 export function parapet(b: MeshBatch, f: Frame, hu: number, hv: number, y: number, hgt: number, color: RGB): void {
   const t = 2.5;
-  f.box(b, -hu, hu, y, y + hgt, hv - t, hv, color);
-  f.box(b, -hu, hu, y, y + hgt, -hv, -hv + t, color);
-  f.box(b, -hu, -hu + t, y, y + hgt, -hv + t, hv - t, color);
-  f.box(b, hu - t, hu, y, y + hgt, -hv + t, hv - t, color);
+  const h = new HB(b, f);
+  const top = y + hgt;
+  if (hgt > 0) {
+    h.wallV(-hu, hu, y, top, hv, 1, color);
+    h.wallV(-hu, hu, y, top, -hv, -1, color);
+    h.wallU(-hv, hv, y, top, -hu, -1, color);
+    h.wallU(-hv, hv, y, top, hu, 1, color);
+    h.wallV(-hu + t, hu - t, y, top, hv - t, -1, color);
+    h.wallV(-hu + t, hu - t, y, top, -hv + t, 1, color);
+    h.wallU(-hv + t, hv - t, y, top, -hu + t, 1, color);
+    h.wallU(-hv + t, hv - t, y, top, hu - t, -1, color);
+  }
+  h.flat(-hu, hu, hv - t, hv, top, color);
+  h.flat(-hu, hu, -hv, -hv + t, top, color);
+  h.flat(-hu, -hu + t, -hv + t, hv - t, top, color);
+  h.flat(hu - t, hu, -hv + t, hv - t, top, color);
 }
 
 export function rooftopStuff(c: Ctx, f: Frame, hu: number, hv: number, y: number, count = 3): void {
   const b = c.main.at(f.cx, f.cz);
+  const h = new HB(b, f);
   const r = c.rnd;
   for (let i = 0; i < count; i++) {
     const u = (r() * 2 - 1) * (hu - 22);
     const v = (r() * 2 - 1) * (hv - 22);
     if (r() < 0.5) {
-      f.box(b, u - 7, u + 7, y, y + 9, v - 6, v + 6, hex(0xc9ccd2));
-      f.box(b, u - 5, u + 5, y + 9, y + 10, v - 4, v + 4, hex(0x8a8e96));
+      h.box(u - 7, u + 7, y, y + 9, v - 6, v + 6, hex(0xc9ccd2), 'fblrt');
+      h.box(u - 5, u + 5, y + 9, y + 10, v - 4, v + 4, hex(0x8a8e96), 'fblrt');
     } else {
       const p = f.pt(u, y, v);
-      b.cylinder(p[0], p[2], y, y + 14, 5, 5, 8, hex(0xb9a48a));
-      b.cylinder(p[0], p[2], y + 14, y + 18, 5, 1, 8, hex(0x8a735a));
+      h.prism(p[0], p[2], y, y + 14, 5, 5, 8, hex(0xb9a48a), false);
+      h.prism(p[0], p[2], y + 14, y + 18, 5, 1, 8, hex(0x8a735a), true);
     }
   }
 }
