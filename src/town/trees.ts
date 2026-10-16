@@ -69,6 +69,7 @@ function addVerts(b: MeshBatch, pos: readonly V3[], nor: readonly V3[], col: rea
     b.pos.push(p[0], p[1], p[2]);
     b.nor.push(n[0], n[1], n[2]);
     b.col.push(c[0], c[1], c[2], 1);
+    b.surf.push(0); // keeps the per-vertex surface tags aligned with the vertices
     if (b.withUV) b.uvs.push(0, 0);
   }
   return base;

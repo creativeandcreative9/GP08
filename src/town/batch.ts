@@ -224,6 +224,7 @@ export class MeshBatch {
     if (this.withUV) vd.uvs = new Float32Array(this.uvs);
     vd.indices = this.vertexCount > 65535 ? new Uint32Array(this.idx) : new Uint16Array(this.idx);
     vd.applyToMesh(mesh);
+    if (this.surf.length !== this.vertexCount) throw new Error(`MeshBatch ${name}: ${this.surf.length} surface tags for ${this.vertexCount} vertices`);
     if (this.tagged) mesh.setVerticesData(SURF_KIND, new Float32Array(this.surf), false, 1);
     mesh.material = material;
     mesh.isPickable = false;
