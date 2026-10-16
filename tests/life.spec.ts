@@ -1,9 +1,11 @@
 import { expect, test } from '@playwright/test';
 import { Crowd, FLAT_ENV } from '../src/life/crowd';
+import { ObstacleGrid } from '../src/life/obstacles';
 import { Path, newPathPt, polylineWindow } from '../src/life/path';
 import { Traffic, zoneSpeed, type Car } from '../src/life/traffic';
 import { CAR_KINDS } from '../src/life/carmodels';
-import { roadClearance, roadsW } from '../src/town/site';
+import { insideAny, roadClearance, roadsW } from '../src/town/site';
+import { makeRng, type Rect } from '../src/town/util';
 
 // ---- pure logic: paths, traffic and the crowd (no browser) -----------------------------------------------------
 
@@ -190,6 +192,60 @@ test('crowd: about a hundred people, walkers keep to the sidewalks and move, sta
     expect(p.lat).toBeLessThanOrEqual(lane.latMax + 1e-6);
     expect(Number.isFinite(p.x) && Number.isFinite(p.z) && Number.isFinite(p.yaw)).toBe(true);
   }
+});
+
+test('ObstacleGrid answers like insideAny, only faster', () => {
+  const rnd = makeRng(4242);
+  const rects: Rect[] = [];
+  for (let i = 0; i < 600; i++) {
+    const x = (rnd() - 0.5) * 6000;
+    const z = (rnd() - 0.5) * 6000;
+    const w = 2 + rnd() * (i % 7 === 0 ? 160 : 24);
+    const d = 2 + rnd() * (i % 5 === 0 ? 120 : 24);
+    rects.push({ minX: x, maxX: x + w, minZ: z, maxZ: z + d });
+  }
+  const grid = new ObstacleGrid(rects);
+  let hits = 0;
+  let mismatches = 0;
+  for (let i = 0; i < 20000; i++) {
+    const x = (rnd() - 0.5) * 6200;
+    const z = (rnd() - 0.5) * 6200;
+    const m = [0, 1.6, 1.9, 4, 6][i % 5]!;
+    const expected = insideAny(x, z, rects, m);
+    if (expected) hits++;
+    if (grid.hit(x, z, m) !== expected) mismatches++;
+  }
+  expect(mismatches).toBe(0);
+  expect(hits).toBeGreaterThan(100);
+});
+
+test('crowd: walkers keep out of solid footprints on their way (they step round or turn back)', () => {
+  const spots = { 'w-conbini': { x: -509, z: -911, fx: 1, fz: 0, hu: 60, hv: 35 } };
+  const cast = { walkers: Array.from({ length: 13 }, (_, i) => i), jogger: 13, wagashi: 14, cafe: 15, station: 16, sitters: { low: [0], high: [1] } };
+  // find a sidewalk where somebody walks, and put a post box (a 10 x 10 footprint) in the middle of the way
+  const plain = new Crowd(spots, cast, FLAT_ENV);
+  const first = plain.people.find((p) => p.mode === 'walk' && p.lane && p.lane.id.includes(':') && !p.animal)!;
+  const lane = first.lane!;
+  const q = newPathPt();
+  lane.path.at(first.s + first.dir * 60, q);
+  const mid = (lane.latMin + lane.latMax) / 2;
+  const cx = q.x - q.tz * mid;
+  const cz = q.z + q.tx * mid;
+  const box = { minX: cx - 5, maxX: cx + 5, minZ: cz - 5, maxZ: cz + 5 };
+  const inside = (x: number, z: number, m: number): boolean => x > box.minX - m && x < box.maxX + m && z > box.minZ - m && z < box.maxZ + m;
+  const crowd = new Crowd(spots, cast, { ...FLAT_ENV, solid: inside });
+  const walkers = crowd.people.filter((p) => p.mode === 'walk' && !p.animal);
+  let entered = 0;
+  let passed = 0;
+  for (let step = 0; step < 1500; step++) {
+    crowd.update(0.1);
+    for (const p of walkers) {
+      if (inside(p.x, p.z, 0)) entered++;
+      if (p.lane!.id === lane.id && Math.hypot(p.x - cx, p.z - cz) < 24) passed++;
+    }
+  }
+  expect(entered, 'nobody walks through the footprint').toBe(0);
+  expect(passed, 'people do come by (round it or up to it)').toBeGreaterThan(0);
 });
 
 test('crowd: staff inside the shops are placed only where a raised interior floor really is', () => {

@@ -4,12 +4,14 @@ import { makeRng } from '../town/util';
 import { Path, newPathPt, type PathPt, type Pt } from './path';
 
 /**
- * The people of the town (pure logic, no Babylon): walkers on the sidewalks and the plaza paths, commuters through
- * the station, people standing at shop fronts, sitting on benches and chairs, and the shop / station staff. Walkers keep
- * to the left (like in Japan), avoid each other crudely by moving sideways, and turn around at the end of their stretch.
+ * The people of the town (pure logic, no Babylon): walkers on the sidewalks and the plaza paths, dogs on a lead,
+ * people standing at shop fronts, sitting on benches and chairs, and the shop / station staff (the station concourse
+ * has its own passengers and attendant, built with the station, so nobody is put in there). Walkers keep to the left
+ * (like in Japan), avoid each other and the solid footprints ahead of them (furniture, walls) by moving sideways, and
+ * turn around at the end of their stretch or where there is no way round.
  *
- * Where a person may stand or sit is asked of a `CrowdEnv`: in the game it looks at the real geometry of the town
- * (decks, steps, benches), in tests it is flat and free.
+ * Where a person may stand or sit, and what is solid, is asked of a `CrowdEnv`: in the game it looks at the real
+ * geometry of the town (decks, steps, benches, `town.obstacles`), in tests it is flat and free.
  */
 
 export type Mode = 'walk' | 'stand' | 'sit';
@@ -111,6 +113,11 @@ const SIDEWALK_FAR = 12.6;
 const SIDEWALK_Y = 0.2;
 const PATH_Y = 0.45;
 
+/** Where walkers look for solid footprints: here, 5 and 10 units ahead (along the way they are going) */
+const LOOK_AT: readonly number[] = [0, 5, 10];
+/** Clearance a walker keeps from solid footprints */
+const BODY = 1.9;
+
 const TWO_PI = Math.PI * 2;
 const angleDiff = (a: number, b: number): number => Math.atan2(Math.sin(a - b), Math.cos(a - b));
 
@@ -134,6 +141,8 @@ export class Crowd {
   readonly lanes: Lane[] = [];
   private readonly laneByKey = new Map<string, Lane>();
   private readonly tmp: PathPt = newPathPt();
+  /** The look-ahead points of the walker being updated (see `LOOK_AT`) */
+  private readonly look: PathPt[] = LOOK_AT.map(() => newPathPt());
   private readonly rnd: () => number;
   private bag: number[] = [];
 
@@ -148,7 +157,6 @@ export class Crowd {
     this.buildPlazaLanes();
     this.placeWalkers(spots);
     this.placeDogs(spots);
-    this.placeCommuters();
     this.placeShopFolk(spots);
     this.placeStationFolk();
     this.placeBenchSitters();
@@ -424,42 +432,6 @@ export class Crowd {
     pair(this.laneByKey.get('plaza-n'), 300, 1, owners[Math.min(2, owners.length - 1)]!);
   }
 
-  /**
-   * Commuters: a closed loop through the station - in through the front door, through a ticket gate onto the
-   * platform, back through another gate and out. Only built where the concourse really is (its plan must be free of
-   * solid footprints along the whole way).
-   */
-  private placeCommuters(): void {
-    const loop: Pt[] = [
-      { x: 9, z: 566 },
-      { x: 9, z: 640 },
-      { x: 15, z: 662 },
-      { x: 15, z: 738 },
-      { x: 0, z: 744 },
-      { x: 0, z: 662 },
-      { x: -9, z: 640 },
-      { x: -9, z: 566 },
-      { x: 9, z: 566 },
-    ];
-    const lane = this.addLane('station-loop', loop, 1.2, 0.3);
-    // every point of the way must be a floor in an open space (no wall, gate machine or furniture within 3 units)
-    for (let s = 0; s < lane.path.length; s += 4) {
-      const p = this.tmp;
-      lane.path.at(s, p);
-      if (this.env.solid(p.x, p.z, 3.2)) return;
-    }
-    for (let i = 0; i < 4; i++) {
-      const w = this.addWalker(lane, 0, lane.path.length, this.nextOutfit(), 1, 14.5 + this.rnd() * 3);
-      if (w) {
-        w.s = (lane.path.length * i) / 4 + this.rnd() * 20;
-        w.s1 = lane.path.length * 1e6;
-        w.lat = 0;
-        this.pose(w);
-        w.yaw = w.yawTarget;
-      }
-    }
-  }
-
   private place(outfit: number, mode: Mode, x: number, z: number, yaw: number, staff = false): Person {
     const p = this.newPerson(outfit, mode);
     p.x = x;
@@ -473,9 +445,12 @@ export class Crowd {
   /**
    * Puts a standing person at the first free place among the candidates (absolute x, z). `minRise`: the floor must
    * be at least that far above the terrain (a room inside a shop; the plain ground there would be inside a wall).
+   * `clear`: when set, the place must also be that far from every solid footprint (street furniture, walls) - for
+   * people standing out in the street; on a deck or inside a shop the footprint of the building itself is under them.
    */
-  private standAt(outfit: number, cands: readonly Pt[], yaw: number, staff = false, apart = 7, minRise = 0): Person | null {
+  private standAt(outfit: number, cands: readonly Pt[], yaw: number, staff = false, apart = 7, minRise = 0, clear = 0): Person | null {
     for (const c of cands) {
+      if (clear > 0 && this.env.solid(c.x, c.z, clear)) continue;
       const y = this.env.stand(c.x, c.z);
       if (y === undefined || y - this.env.ground(c.x, c.z) < minRise) continue;
       if (this.people.some((o) => o.mode !== 'walk' && Math.hypot(o.x - c.x, o.z - c.z) < apart)) continue;
@@ -527,11 +502,11 @@ export class Crowd {
       const cands: Pt[] = [];
       for (const off of [-20, 20, -14, 14, -9, 9, -26, 26]) for (const v of [8, 11, 14]) cands.push(shopPoint(sp, du + off, v));
       this.shuffle(cands);
-      const a = this.standAt(this.nextOutfit(), cands, face(sp, rnd() < 0.75) + (rnd() - 0.5) * 0.5);
+      const a = this.standAt(this.nextOutfit(), cands, face(sp, rnd() < 0.75) + (rnd() - 0.5) * 0.5, false, 7, 0, 1.6);
       if (a && pair) {
         // a second person next to the first, turned towards them
         const near = [8.5, -8.5].map((d) => ({ x: a.x + rx * d, z: a.z + rz * d }));
-        const b = this.standAt(this.nextOutfit(), near, 0);
+        const b = this.standAt(this.nextOutfit(), near, 0, false, 7, 0, 1.6);
         if (b) {
           a.yawTarget = a.yaw = Math.atan2(b.x - a.x, b.z - a.z);
           b.yawTarget = b.yaw = Math.atan2(a.x - b.x, a.z - b.z);
@@ -610,7 +585,7 @@ export class Crowd {
     const waits: [number, number][] = [[64, 596], [-70, 600], [88, 590], [-96, 606]];
     for (const [x, z] of waits) {
       const jitter = (): Pt => ({ x: x + (rnd() - 0.5) * 8, z: z + (rnd() - 0.5) * 8 });
-      this.standAt(this.nextOutfit(), [jitter(), jitter(), { x, z }], 2.2 + rnd() * 1.5, false, 9);
+      this.standAt(this.nextOutfit(), [jitter(), jitter(), { x, z }], 2.2 + rnd() * 1.5, false, 9, 0, 1.6);
     }
     // station staff at the top of the entrance ramp, facing the plaza
     this.standAt(this.cast.station, [{ x: 24, z: 610 }, { x: -24, z: 610 }, { x: 34, z: 604 }, { x: 52, z: 606 }], Math.PI, true);
@@ -674,6 +649,31 @@ export class Crowd {
     }
   }
 
+  /** Is the spot at lateral offset `lat` free of solid footprints at all the look-ahead points (see `clearOffset`)? */
+  private freeAhead(lat: number): boolean {
+    for (let i = 0; i < LOOK_AT.length; i++) {
+      const q = this.look[i]!;
+      if (this.env.solid(q.x - q.tz * lat, q.z + q.tx * lat, BODY)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * The lateral offset a walker aims for: `pref` if the way ahead is free there, else the nearest free offset beside it
+   * within the lane, else NaN (no way round). The way ahead is checked here, a few steps ahead and a few behind.
+   */
+  private clearOffset(lane: Lane, p: Person, pref: number): number {
+    for (let i = 0; i < LOOK_AT.length; i++) lane.path.at(p.s + p.dir * LOOK_AT[i]!, this.look[i]!, p.hint);
+    if (this.freeAhead(pref)) return pref;
+    for (let k = 1; k <= 7; k++) {
+      const up = pref + k * 1.1;
+      if (up <= lane.latMax && this.freeAhead(up)) return up;
+      const down = pref - k * 1.1;
+      if (down >= lane.latMin && this.freeAhead(down)) return down;
+    }
+    return NaN;
+  }
+
   private stepWalker(lane: Lane, p: Person, ws: readonly Person[], dt: number): void {
     const loop = p.s1 > lane.path.length * 100;
     if (p.buddy) {
@@ -712,7 +712,14 @@ export class Crowd {
       const dl = p.lat - o.lat;
       if (Math.abs(dl) < 4.6) push += (dl >= 0 ? 1 : -1) * (4.6 - Math.abs(dl)) * 5;
     }
-    const target = p.buddy ? p.buddy.lat + p.buddyOff : pref;
+    let target = pref;
+    if (p.buddy) target = p.buddy.lat + p.buddyOff;
+    else if (p.pause <= 0) {
+      // something solid ahead (a post box, a bench, a wall): aim for the nearest free place beside it, or turn round
+      const free = this.clearOffset(lane, p, pref);
+      if (Number.isNaN(free)) p.pause = 0.6 + this.rnd() * 1.4;
+      else target = free;
+    }
     // (the one who follows keeps up with a stiffer spring)
     const kp = p.buddy ? 11 : 4;
     const kd = p.buddy ? 6.2 : 3.2;

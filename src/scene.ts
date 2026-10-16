@@ -8,10 +8,10 @@ import {
   Scene,
   Vector3,
 } from '@babylonjs/core';
-import { createLife } from './life';
 import { LIGHT, setupRendering, type Rendering } from './render';
 import { createSky, HORIZON } from './sky';
 import { SPAWN } from './town/layout';
+import { createLife } from './life';
 import { buildTown, type Town } from './town/build';
 import { roadClearance, roadsW } from './town/site';
 
@@ -194,9 +194,9 @@ export function createScene(engine: Engine, canvas: HTMLCanvasElement): GameScen
   const casters = townMeshes.filter((m) => m.name.startsWith('town_') || m.name.startsWith('forest_'));
   const receivers = [...townMeshes.filter((m) => m.name !== 'clouds' && m.name !== 'sea'), ...scene.meshes.filter((m) => m.name === 'terrain')];
   const rendering = setupRendering(scene, camera, sun, casters, receivers);
-  createLife(scene, town, rendering);
 
   scene.metadata = { ...(scene.metadata ?? {}), town };
+  createLife(scene, town, rendering);
   const q = new URLSearchParams(location.search).get('view');
   const view: View = (VIEWS as readonly string[]).includes(q ?? '') ? (q as View) : 'default';
   applyView(camera, scene, town, view);

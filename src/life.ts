@@ -2,7 +2,7 @@ import type { Scene } from '@babylonjs/core';
 import type { Rendering } from './render';
 import type { Town } from './town/build';
 import { MeshBatch } from './town/batch';
-import { insideAny, roadsW } from './town/site';
+import { roadsW } from './town/site';
 import { buildWheel, CAR_KINDS } from './life/carmodels';
 import { Crowd, type CrowdEnv, type Person } from './life/crowd';
 import { buildDog } from './life/animals';
@@ -11,6 +11,7 @@ import { hideInstance, Instances, lifeMaterial, setPart, setPose } from './life/
 import { OUTFITS, STAFF } from './life/outfits';
 import { buildFused } from './life/people';
 import { FusedSet, PersonSet, SeatedSet } from './life/personset';
+import { ObstacleGrid } from './life/obstacles';
 import { Prober } from './life/probe';
 import { Traffic, type Car } from './life/traffic';
 
@@ -124,11 +125,12 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
   const castSize = dogIndex + 1;
   const idx = (id: string): number => OUTFITS.findIndex((o) => o.id === id);
   const prober = new Prober(scene);
+  const grid = new ObstacleGrid(town.obstacles);
   const env: CrowdEnv = {
     ground: height,
     stand: (x, z) => prober.stand(x, z, height(x, z)),
     seat: (x, z, top) => prober.seat(x, z, height(x, z), top),
-    solid: (x, z, m) => insideAny(x, z, town.obstacles, m),
+    solid: (x, z, m) => grid.hit(x, z, m),
   };
   const crowd = new Crowd(
     town.spots,
@@ -286,6 +288,15 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
       staff: staffPosts,
       meshes,
       vertices: verts,
+      /** runs the simulation ahead by `seconds` without drawing (for tests and debugging) */
+      step: (seconds: number): void => {
+        for (let t = 0; t < seconds; t += 0.1) {
+          traffic.update(0.1);
+          crowd.update(0.1);
+        }
+      },
+      /** how many walkers stand still at the moment (waiting at the end of a stretch or in front of something solid) */
+      paused: (): number => mobile.filter((p) => p.mode === 'walk' && !p.hidden && !p.animal && p.pause > 0).length,
       /** outfit, mode and x,z of everyone who stands or sits (for tests and debugging) */
       posts: (): { outfit: number; mode: string; x: number; z: number; hidden: boolean }[] =>
         humans.filter((p) => p.mode !== 'walk').map((p) => ({ outfit: p.outfit, mode: p.mode, x: p.x, z: p.z, hidden: p.hidden })),
