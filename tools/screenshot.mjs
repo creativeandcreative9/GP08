@@ -36,7 +36,7 @@ try {
     console.error(`[pageerror] ${e.message}`);
   });
 
-  await page.goto(`http://127.0.0.1:${port}/${query}`);
+  await page.goto(`http://127.0.0.1:${port}/${query}`, { timeout });
   try {
     await page.waitForFunction(() => window.__gp08 && window.__gp08.ready === true, null, { timeout });
   } catch {
@@ -45,7 +45,9 @@ try {
   }
   await page.waitForTimeout(wait);
   fs.mkdirSync(path.dirname(path.resolve(out)), { recursive: true });
-  await page.screenshot({ path: out });
+  // a software renderer can take seconds per frame: stop the loop so that the page is idle for the capture
+  await page.evaluate(() => window.__gp08.scene?.getEngine().stopRenderLoop());
+  await page.screenshot({ path: out, timeout });
   console.log(`Saved ${out}`);
 } catch (e) {
   failed = true;
