@@ -3,6 +3,7 @@ import { ChunkedBatch, MeshBatch } from './batch';
 import type { Ctx, Spot } from './ctx';
 import { LOTS } from './layout';
 import { buildClouds } from './clouds';
+import { buildFurniture } from './furniture';
 import { buildInfill } from './infill';
 import { buildLots } from './lots';
 import { SMALL_SHOPS } from './shops';
@@ -10,6 +11,7 @@ import { OccGrid } from './site';
 import { buildPlaza, buildRailway, buildRoads, buildStation, buildCrossings } from './network';
 import { buildAvenues, buildForest, buildPoles, buildTrail } from './props';
 import { SignAtlas } from './signs';
+import { STREET_SIGN_LABELS } from './streetsigns';
 import { buildSummit } from './summit';
 import { createTerrainMeshes, heightAt } from './terrain';
 import { makeRng, type Rect } from './util';
@@ -49,7 +51,7 @@ export function buildTown(scene: Scene): Town {
   const t0 = performance.now();
   const root = new TransformNode('town', scene);
 
-  const labels = ['駅', '海辺の公園', '公園', '体育館', 'アパート', 'マンション', '売地', ...SMALL_SHOPS];
+  const labels = ['駅', '海辺の公園', '公園', '体育館', 'アパート', 'マンション', '売地', ...SMALL_SHOPS, ...STREET_SIGN_LABELS];
   for (const l of LOTS) if (l.kind !== 'home' || l.floors >= 3) labels.push(l.label);
 
   const c: Ctx = {
@@ -102,6 +104,8 @@ export function buildTown(scene: Scene): Town {
   mark('avenues');
   const poles = buildPoles(c);
   mark('poles+wires');
+  buildFurniture(c);
+  mark('furniture');
   const forest = buildForest(c, trail);
   mark('forest');
   c.report.push(`vertices by stage: ${budget.join(', ')}`);

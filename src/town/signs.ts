@@ -1,4 +1,5 @@
 import { DynamicTexture, StandardMaterial, Texture, Color3, type Scene } from '@babylonjs/core';
+import { STREET_SIGN_STYLES } from './streetsigns';
 
 export const FONT_STACK = "'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', 'IPAGothic', 'IPAPGothic', sans-serif";
 
@@ -8,10 +9,13 @@ export interface SignStyle {
   /** Second band colour (stripe along the top and bottom). */
   accent?: string;
   icon?: 'cross' | 'leaf' | 'rail';
+  /** Draws the whole cell (512 x 128, origin at its top-left corner) instead of the default board. */
+  draw?: (ctx: CanvasRenderingContext2D, w: number, h: number, font: string) => void;
 }
 
 /** Sign look per label. Anything not listed gets the default board. */
 const STYLES: Record<string, SignStyle> = {
+  ...STREET_SIGN_STYLES,
   レストラン: { bg: '#8c1f2b', fg: '#ffe9a8', accent: '#e8c35a' },
   カフェ: { bg: '#5b3a29', fg: '#fff4e0', accent: '#d9a066' },
   コンビニ: { bg: '#ffffff', fg: '#0b6fb8', accent: '#1fa04a' },
@@ -55,7 +59,7 @@ const DEFAULT_STYLE: SignStyle = { bg: '#3b4a5a', fg: '#ffffff', accent: '#aab8c
 const CELL_W = 512;
 const CELL_H = 128;
 const COLS = 4;
-const ROWS = 16;
+const ROWS = 32;
 
 export interface UvRect {
   u0: number;
@@ -108,6 +112,11 @@ export class SignAtlas {
   private drawCell(ctx: CanvasRenderingContext2D, x0: number, y0: number, label: string, s: SignStyle): void {
     ctx.save();
     ctx.translate(x0, y0);
+    if (s.draw) {
+      s.draw(ctx, CELL_W, CELL_H, FONT_STACK);
+      ctx.restore();
+      return;
+    }
     ctx.fillStyle = s.bg;
     ctx.fillRect(0, 0, CELL_W, CELL_H);
     // accent bands + inner frame
