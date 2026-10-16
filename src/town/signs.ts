@@ -52,10 +52,12 @@ const STYLES: Record<string, SignStyle> = {
 };
 const DEFAULT_STYLE: SignStyle = { bg: '#3b4a5a', fg: '#ffffff', accent: '#aab8c8' };
 
-const CELL_W = 512;
-const CELL_H = 128;
+export const CELL_W = 512;
+export const CELL_H = 128;
 const COLS = 4;
 const ROWS = 16;
+/** Distance of the inner frame's vertical lines from the cell edges. */
+const FRAME_X = 12;
 
 export interface UvRect {
   u0: number;
@@ -64,11 +66,43 @@ export interface UvRect {
   v1: number;
 }
 
+/** A vertical strip of a signboard: board fractions x0..x1 (0 = the reader's left edge) showing atlas u0..u1. */
+export interface SignStrip {
+  x0: number;
+  x1: number;
+  u0: number;
+  u1: number;
+}
+
+/**
+ * Strips that show a sign cell on a board `aspect` times as wide as it is tall without stretching the lettering:
+ * the ink ([inkL, inkR], cell pixels) keeps the cell's proportions and only the plain background between the inner
+ * frame and the ink is widened, equally on both sides. A board no wider than a cell gets the whole cell.
+ */
+export function signStrips(cell: UvRect, inkL: number, inkR: number, aspect: number): SignStrip[] {
+  const extra = aspect * CELL_H - CELL_W;
+  if (extra <= 0.5) return [{ x0: 0, x1: 1, u0: cell.u0, u1: cell.u1 }];
+  // the widened background, 4 px clear of the frame line and the ink. A whole range rather than one repeated column:
+  // a strip of a single column has a degenerate texture footprint and sparkles at a distance.
+  const l0 = FRAME_X + 6;
+  const l1 = Math.max(l0, inkL - 4);
+  const r1 = CELL_W - FRAME_X - 6;
+  const r0 = Math.min(r1, inkR + 4);
+  const W = CELL_W + extra;
+  // board positions and the cell pixels they show; strips 1 and 3 are the widened background
+  const bp = [0, l0, l1 + extra / 2, r0 + extra / 2, r1 + extra, W];
+  const cp = [0, l0, l1, r0, r1, CELL_W];
+  const U = (px: number): number => cell.u0 + (px / CELL_W) * (cell.u1 - cell.u0);
+  return [0, 1, 2, 3, 4].map((i) => ({ x0: bp[i]! / W, x1: bp[i + 1]! / W, u0: U(cp[i]!), u1: U(cp[i + 1]!) }));
+}
+
 /** One texture atlas holding every signboard, so all signs share a single draw call. */
 export class SignAtlas {
   readonly texture: DynamicTexture;
   readonly material: StandardMaterial;
   private cells = new Map<string, UvRect>();
+  /** Horizontal extent [left, right] of the drawn lettering/icon per label, in cell pixels. */
+  private ink = new Map<string, readonly [number, number]>();
 
   constructor(scene: Scene, labels: readonly string[]) {
     const W = CELL_W * COLS;
@@ -81,7 +115,7 @@ export class SignAtlas {
     unique.forEach((label, n) => {
       const col = n % COLS;
       const row = Math.floor(n / COLS);
-      this.drawCell(ctx, col * CELL_W, row * CELL_H, label, STYLES[label] ?? DEFAULT_STYLE);
+      this.ink.set(label, this.drawCell(ctx, col * CELL_W, row * CELL_H, label, STYLES[label] ?? DEFAULT_STYLE));
       // DynamicTexture flips Y: canvas row 0 is v = 1
       this.cells.set(label, {
         u0: (col * CELL_W) / W,
@@ -105,7 +139,17 @@ export class SignAtlas {
     return r;
   }
 
-  private drawCell(ctx: CanvasRenderingContext2D, x0: number, y0: number, label: string, s: SignStyle): void {
+  /** Strips that show `label` undistorted on a board `aspect` times as wide as it is tall (see signStrips). */
+  strips(label: string, aspect: number): SignStrip[] {
+    const ink = this.ink.get(label);
+    if (!ink) throw new Error(`no sign for ${label}`);
+    return signStrips(this.uv(label), ink[0], ink[1], aspect);
+  }
+
+  /** Draws one cell and returns the horizontal extent [left, right] of its ink in cell pixels. */
+  private drawCell(
+    ctx: CanvasRenderingContext2D, x0: number, y0: number, label: string, s: SignStyle,
+  ): readonly [number, number] {
     ctx.save();
     ctx.translate(x0, y0);
     ctx.fillStyle = s.bg;
@@ -118,7 +162,7 @@ export class SignAtlas {
     }
     ctx.strokeStyle = s.accent ?? s.fg;
     ctx.lineWidth = 3;
-    ctx.strokeRect(12, 16, CELL_W - 24, CELL_H - 32);
+    ctx.strokeRect(FRAME_X, 16, CELL_W - 2 * FRAME_X, CELL_H - 32);
 
     const iconW = s.icon ? 84 : 0;
     const maxW = CELL_W - 60 - iconW;
@@ -131,6 +175,7 @@ export class SignAtlas {
       if (ctx.measureText(label).width <= maxW) break;
     }
     ctx.font = `bold ${size}px ${FONT_STACK}`;
+    const tw = ctx.measureText(label).width;
     const cx = CELL_W / 2 + iconW / 2;
     ctx.fillText(label, cx, CELL_H / 2 + 3);
 
@@ -166,5 +211,7 @@ export class SignAtlas {
       ctx.stroke();
     }
     ctx.restore();
+    // the icons all sit within x 30..94 of the cell, left of the label
+    return [s.icon ? 30 : cx - tw / 2, cx + tw / 2];
   }
 }

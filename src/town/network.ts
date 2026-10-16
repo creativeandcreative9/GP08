@@ -1,6 +1,7 @@
 import { MeshBatch, beam } from './batch';
 import { DEC0_Y, DEC1_Y, DEC2_Y, DEC3_Y, type Ctx } from './ctx';
 import { Frame } from './frame';
+import { signBoard, signOnFace } from './parts';
 import { plazaW, railW, RAIL_HALF, roadClearance, roadsW, stationRect, type Pt } from './site';
 import { PLATFORM, platformObstacles } from './platform';
 import { heightAt } from './terrain';
@@ -301,21 +302,15 @@ export function buildStation(c: Ctx): void {
     if (Math.abs(k) < 1) continue;
     f.facade(b, k * 60 - 18, k * 60 + 18, h + 34, h + 42, hv + 0.6, 1, glass);
   }
-  // sign on the front wall above the canopy
-  const uv = c.atlas.uv('駅');
-  const sb = c.signs.at(0, 700);
-  const sw = 92;
+  // sign above the canopy (facing the plaza) and the same sign at the back (facing the tracks). Both stick up above
+  // the roof, so each is mounted on a plain board: seen from behind it shows the board, not mirrored lettering.
+  const sw = 184;
   const sh = 23;
   const y0 = h + 47;
-  const v = hv + 1.0;
-  sb.quad(f.pt(sw, y0, v), f.pt(-sw, y0, v), f.pt(-sw, y0 + sh, v), f.pt(sw, y0 + sh, v), [1, 1, 1], f.dir(0, 0, 1), [
-    [uv.u0, uv.v0], [uv.u1, uv.v0], [uv.u1, uv.v1], [uv.u0, uv.v1],
-  ]);
-  // same sign at the back (facing the tracks)
-  const vb = -hv - 1.0;
-  sb.quad(f.pt(-sw, y0, vb), f.pt(sw, y0, vb), f.pt(sw, y0 + sh, vb), f.pt(-sw, y0 + sh, vb), [1, 1, 1], f.dir(0, 0, -1), [
-    [uv.u0, uv.v0], [uv.u1, uv.v0], [uv.u1, uv.v1], [uv.u0, uv.v1],
-  ]);
+  for (const dir of [1, -1] as const) {
+    f.box(b, -sw / 2, sw / 2, y0, y0 + sh, dir * hv, dir * (hv + 0.6), hex(0x1a56a8));
+    signOnFace(c, f, '駅', 0, y0, sw, sh, dir * (hv + 1.0), dir);
+  }
   c.obstacles.push({ minX: -hu, maxX: hu, minZ: 664 - hv, maxZ: 664 + hv });
 
   // platform canopies (long slab roofs on posts)
@@ -339,19 +334,9 @@ export function buildStation(c: Ctx): void {
   // platform end ramps (visual) and a tall station name pole
   b.cylinder(-440, 790, h, h + 40, 1.2, 1.2, 6, hex(0x555a62));
   b.box(-462, -418, h + 40, h + 52, 788, 792, hex(0x1a56a8));
-  const u2 = c.atlas.uv('駅');
-  const sg = c.signs.at(-440, 790);
-  for (const zz of [785.9, 794.1]) {
-    const dirn: 1 | -1 = zz < 790 ? -1 : 1;
-    sg.quad(
-      dirn > 0 ? [-462, h + 41, zz] : [-418, h + 41, zz],
-      dirn > 0 ? [-418, h + 41, zz] : [-462, h + 41, zz],
-      dirn > 0 ? [-418, h + 51, zz] : [-462, h + 51, zz],
-      dirn > 0 ? [-462, h + 51, zz] : [-418, h + 51, zz],
-      [1, 1, 1], [0, 0, dirn],
-      [[u2.u0, u2.v0], [u2.u1, u2.v0], [u2.u1, u2.v1], [u2.u0, u2.v1]],
-    );
-  }
+  // read from either platform: the reader's left is the west end from the south, the east end from the north
+  signBoard(c, '駅', [-462, h + 41, 785.9], [-418, h + 41, 785.9], 10, [0, 0, -1]);
+  signBoard(c, '駅', [-418, h + 41, 794.1], [-462, h + 41, 794.1], 10, [0, 0, 1]);
 
   // footbridge over the tracks
   const bx = 430;

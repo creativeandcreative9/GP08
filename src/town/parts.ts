@@ -1,7 +1,7 @@
 import type { MeshBatch } from './batch';
 import type { Ctx } from './ctx';
 import type { Frame } from './frame';
-import { hex, type RGB } from './util';
+import { hex, type RGB, type V3 } from './util';
 
 export const GLASS = hex(0x9fd0ee);
 export const GLASS_DARK = hex(0x6c9cc4);
@@ -56,19 +56,26 @@ export function windowGrid(
   }
 }
 
+/** Atlas sign on an upright board: `left`/`right` are its bottom corners as the reader sees them, `h` its height. */
+export function signBoard(c: Ctx, label: string, left: V3, right: V3, h: number, normal: V3): void {
+  const { v0, v1 } = c.atlas.uv(label);
+  const sb = c.signs.at((left[0] + right[0]) / 2, (left[2] + right[2]) / 2);
+  const w = Math.hypot(right[0] - left[0], right[2] - left[2]);
+  // exact at both ends, so a board drawn as one strip keeps exactly the given corners
+  const at = (t: number, dy: number): V3 => [left[0] * (1 - t) + right[0] * t, left[1] + dy, left[2] * (1 - t) + right[2] * t];
+  for (const s of c.atlas.strips(label, w / h)) {
+    sb.quad(at(s.x0, 0), at(s.x1, 0), at(s.x1, h), at(s.x0, h), [1, 1, 1], normal, [
+      [s.u0, v0], [s.u1, v0], [s.u1, v1], [s.u0, v1],
+    ]);
+  }
+}
+
 /** Atlas sign quad on the plane v = const (front/back) of a frame, readable from outside. */
 export function signOnFace(
   c: Ctx, f: Frame, label: string, uc: number, y0: number, w: number, h: number, v: number, dir: 1 | -1,
 ): void {
-  const uv = c.atlas.uv(label);
-  const p = f.pt(uc, y0, v);
-  const sb = c.signs.at(p[0], p[2]);
   // For the front (dir=1) the viewer's left is +u; for the back the viewer's left is -u.
-  const left = uc + dir * (w / 2);
-  const right = uc - dir * (w / 2);
-  sb.quad(f.pt(left, y0, v), f.pt(right, y0, v), f.pt(right, y0 + h, v), f.pt(left, y0 + h, v), [1, 1, 1], f.dir(0, 0, dir), [
-    [uv.u0, uv.v0], [uv.u1, uv.v0], [uv.u1, uv.v1], [uv.u0, uv.v1],
-  ]);
+  signBoard(c, label, f.pt(uc + dir * (w / 2), y0, v), f.pt(uc - dir * (w / 2), y0, v), h, f.dir(0, 0, dir));
 }
 
 /** A free-standing rooftop signboard (box with the sign on front and back). */
