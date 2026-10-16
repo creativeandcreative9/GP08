@@ -1,0 +1,465 @@
+diff --git a/src/surface.ts b/src/surface.ts
+index 7fac84c..ede8043 100644
+--- a/src/surface.ts
++++ b/src/surface.ts
+@@ -9,10 +9,19 @@ import {
+ } from '@babylonjs/core';
+ 
+ /**
+- * Per-vertex surface tags (vertex buffer `gp08Surf`, written by `MeshBatch`): what a face is made of,
+- * where the colour alone cannot tell. 0 = plain.
++ * Per-vertex surface tags (vertex buffer `gp08Surf`, written by `MeshBatch` and by the indexed quads of `HB`): what a
++ * face is made of, where the colour alone cannot tell. 0 = plain. The tens digit of the stored value is the long axis of
++ * the piece (see `MeshBatch.axis`), so a tag is always 0-9.
++ *  - roofTiles: kawara rows parallel to the eaves
++ *  - tile:      glazed wall tiles in running bond with grout (mansions, bank, shop bases)
++ *  - panel:     large cladding / curtain-wall panels with open joints and bolts
++ *  - siding:    lapped horizontal boards (apartments)
++ *  - shutter:   rolling shutter slats
++ *  - corrugated: vertical ribbed sheet metal
++ *  - concrete:  board-marked concrete with form-tie holes
++ *  - stone:     ashlar blocks of random course height (plinths, steps)
+  */
+-export const SURF = { plain: 0, roofTiles: 1 } as const;
++export const SURF = { plain: 0, roofTiles: 1, tile: 2, panel: 3, siding: 4, shutter: 5, corrugated: 6, concrete: 7, stone: 8 } as const;
+ export const SURF_KIND = 'gp08Surf';
+ 
+ /** What a whole material draws (the decal layers and the terrain are one kind each). */
+@@ -40,6 +49,101 @@ float gpNoise(vec3 x) {
+     mix(mix(gpHash(i + vec3(0.0, 0.0, 1.0)), gpHash(i + vec3(1.0, 0.0, 1.0)), f.x), mix(gpHash(i + vec3(0.0, 1.0, 1.0)), gpHash(i + vec3(1.0, 1.0, 1.0)), f.x), f.y),
+     f.z);
+ }
++// distance (world units) from x to the nearest multiple of period
++float gpDist(float x, float period) {
++  float f = fract(x / period);
++  return min(f, 1.0 - f) * period;
++}
++// 1 inside a groove of width w centred on d = 0, softened over one pixel footprint fw
++float gpGroove(float d, float w, float fw) {
++  return 1.0 - smoothstep(w * 0.5, w * 0.5 + fw, d);
++}
++/**
++ * Wall materials chosen by the surface tag (SURF): kind 2 tile, 3 panel, 4 siding, 5 shutter, 6 corrugated metal,
++ * 7 concrete, 8 stone. u runs along the wall, y is the height (on a top face: x and z). Every pattern fades to its
++ * average tone once its cells get close to a pixel, so nothing shimmers in the distance.
++ */
++void gpTagged(float kind, vec3 P, vec3 N, float fw, bool top, inout vec3 col, inout float m) {
++  float u = abs(N.x) > abs(N.z) ? P.z : P.x;
++  float y = P.y;
++  if (top) { u = P.x; y = P.z; }
++  float lum = dot(col, vec3(0.299, 0.587, 0.114));
++  if (kind < 2.5) {
++    // glazed tiles in running bond, 6 x 2.8 units (the real ones are far smaller, but this is what reads at street level)
++    float tw = 6.0;
++    float th = 2.8;
++    float row = floor(y / th);
++    float off = mod(row, 2.0) * tw * 0.5;
++    float fade = 1.0 - smoothstep(0.18 * th, 0.6 * th, fw);
++    float line = max(gpGroove(gpDist(u + off, tw), 0.34, fw), gpGroove(gpDist(y, th), 0.3, fw));
++    vec3 grout = mix(col * 0.66, vec3(0.8, 0.78, 0.74), smoothstep(0.5, 0.3, lum));
++    float tone = gpHash(vec3(floor((u + off) / tw), row, 11.0)) - 0.5;
++    float fy = fract(y / th);
++    col = mix(col, grout, 0.8 * line * fade + 0.12 * (1.0 - fade));
++    m *= 1.0 + (0.1 * tone + 0.05 * (smoothstep(0.0, 0.25, fy) - smoothstep(0.75, 1.0, fy))) * fade;
++  } else if (kind < 3.5) {
++    // cladding panels 18 wide, as tall as a storey (36, the joint lines meet the floors at y = 4 + 36 k), open joints and bolts
++    float pw = 18.0;
++    float ph = 36.0;
++    float dxp = gpDist(u, pw);
++    float dyp = gpDist(y - 4.0, ph);
++    float fade = 1.0 - smoothstep(0.1 * ph, 0.35 * ph, fw);
++    float joint = max(gpGroove(dxp, 0.5, fw), gpGroove(dyp, 0.6, fw));
++    float bolt = gpGroove(length(vec2(dxp - 2.4, dyp - 2.6)), 0.7, fw);
++    float pid = gpHash(vec3(floor(u / pw), floor((y - 4.0) / ph), 21.0)) - 0.5;
++    col = mix(col, col * 0.6, 0.85 * joint * fade + 0.05 * (1.0 - fade));
++    col *= 1.0 - 0.25 * bolt * fade;
++    m *= 1.0 + 0.06 * pid * fade;
++  } else if (kind < 4.5) {
++    // lapped boards 3.6 high: each casts a shadow on the one below, the lower lip catches the light; butt joints every 36
++    float bh = 3.6;
++    float row = floor(y / bh);
++    float fy = fract(y / bh);
++    float fade = 1.0 - smoothstep(0.2 * bh, 0.6 * bh, fw);
++    float lip = 1.0 - smoothstep(0.0, 0.1, fy);
++    float shadow = smoothstep(0.78, 1.0, fy);
++    float joint = gpGroove(gpDist(u + gpHash(vec3(row, 5.0, 1.0)) * 36.0, 36.0), 0.3, fw);
++    m *= 1.0 + (0.07 * lip - 0.2 * shadow - 0.14 * joint) * fade - 0.04 * (1.0 - fade);
++  } else if (kind < 5.5) {
++    // rolling shutter: slats 1.1 high, each with a lit upper half and a dark gap
++    float sh = 1.1;
++    float fy = fract(y / sh);
++    float fade = 1.0 - smoothstep(0.25 * sh, 0.7 * sh, fw);
++    float gap = 1.0 - smoothstep(0.0, 0.14 + fw / sh, fy);
++    m *= 1.0 + (0.14 * (fy - 0.5) - 0.3 * gap) * fade - 0.04 * (1.0 - fade);
++    m *= 1.0 + 0.06 * (gpNoise(vec3(u * 0.35, y * 0.05, 3.0)) - 0.5);
++  } else if (kind < 6.5) {
++    // corrugated sheet metal: ribs 3 apart
++    float fade = 1.0 - smoothstep(0.35, 0.9, fw);
++    m *= 1.0 + 0.17 * sin(u * 2.0943951) * fade;
++    m *= 1.0 + 0.1 * (gpNoise(vec3(u * 0.05, y * 0.02, 8.0)) - 0.5);
++  } else if (kind < 7.5) {
++    // board-marked concrete: form panels 24 x 12, tie holes on a 12-unit grid, streaks and mottling
++    float cw = 24.0;
++    float ch = 12.0;
++    float fade = 1.0 - smoothstep(0.1 * ch, 0.4 * ch, fw);
++    float joint = max(gpGroove(gpDist(u, cw), 0.26, fw), gpGroove(gpDist(y, ch), 0.26, fw));
++    float hole = gpGroove(length(vec2(gpDist(u - 6.0, 12.0), gpDist(y - 6.0, 12.0))), 0.9, fw);
++    float pid = gpHash(vec3(floor(u / cw), floor(y / ch), 31.0)) - 0.5;
++    float mott = gpNoise(vec3(u * 0.09, y * 0.09, 3.0)) - 0.5;
++    float streak = gpNoise(vec3(u * 0.45, y * 0.02, 1.0)) - 0.5;
++    col = mix(col, col * 0.62, (0.5 * joint + 0.7 * hole) * fade);
++    m *= 1.0 + (0.06 * pid + 0.1 * mott) * fade + 0.07 * streak;
++  } else {
++    // ashlar: courses 6.5 high, blocks 11-17 wide, each course shifted by its own amount
++    float ch = 6.5;
++    float row = floor(y / ch);
++    float bw = 11.0 + 6.0 * gpHash(vec3(row, 1.0, 2.0));
++    float off = gpHash(vec3(row, 3.0, 4.0)) * bw;
++    float fade = 1.0 - smoothstep(0.1 * ch, 0.45 * ch, fw);
++    float line = top ? 0.0 : gpGroove(gpDist(y, ch), 0.42, fw);
++    float joint = max(line, gpGroove(gpDist(u + off, bw), 0.42, fw));
++    float tone = gpHash(vec3(floor((u + off) / bw), row, 7.0)) - 0.5;
++    float speck = (gpNoise(P * 1.3) - 0.5) * (1.0 - smoothstep(0.2, 0.55, fw * 1.6));
++    col = mix(col, col * 0.58, 0.85 * joint * fade + 0.06 * (1.0 - fade));
++    m *= 1.0 + 0.16 * tone * fade + 0.1 * speck;
++  }
++}
+ `;
+ 
+ /**
+@@ -150,7 +254,10 @@ vGp08Surf = 0.0;
+       float sv = floor(vGp08Surf + 0.5);
+       float axis = floor(sv * 0.1 + 0.01);
+       float vert = 1.0 - smoothstep(0.45, 0.8, abs(N.y)); // 1 on walls, 0 on tops
+-      if (hue > 14.0 && hue < 46.0 && sat > 0.3 && sat < 0.85 && mx > 0.16 && mx < 0.9) {
++      if (sv0 > 1.5) {
++        // a tagged wall material (tile, panel, siding, shutter, corrugated metal, concrete, stone): see gpTagged
++        if (vert > 0.5 || sv0 > 7.5) gpTagged(sv0, P, N, fw, vert < 0.5, col, m);
++      } else if (hue > 14.0 && hue < 46.0 && sat > 0.3 && sat < 0.85 && mx > 0.16 && mx < 0.9) {
+         // wood: grain stretched along the piece's long axis (or along the face when the axis is unknown)
+         vec3 sc = vec3(1.1);
+         if (axis > 0.5) {
+diff --git a/src/town/facade.ts b/src/town/facade.ts
+new file mode 100644
+index 0000000..24844dc
+--- /dev/null
++++ b/src/town/facade.ts
+@@ -0,0 +1,270 @@
++import { SURF } from '../surface';
++import { HB, Wall, tone, type L3, type Rng } from './housekit';
++import { hex, lerp, type RGB } from './util';
++
++/**
++ * Facade kit for the mid-rise buildings, the plain shops and the public buildings. Everything is written against a
++ * {@link Wall} (see housekit.ts), in wall coordinates: `a` along the wall, `y` up, `n` out of the wall plane (negative =
++ * behind it), and made of indexed quads (4 vertices each).
++ *
++ * The central piece is {@link skinWall}: a wall with rectangular openings CUT OUT of it, so that a window sits back from the
++ * wall face behind real reveals (jambs, head, sill). The sun then casts a shadow line under the head and the SSAO darkens the
++ * reveal, which is what makes a flat facade look like a built one. The wall carries a surface tag (tile, panel, siding...) so
++ * the shader draws the material on it (see surface.ts).
++ */
++
++/** The look of a stretch of wall: colour at the bottom and at the top (dirt and shade below, sun above), material tag, drift. */
++export interface Skin {
++  lo: RGB;
++  hi: RGB;
++  /** A SURF value (plain = 0). */
++  tag?: number;
++  /** Total spread of the random brightness drift at every corner (色むら). */
++  amt?: number;
++}
++
++/** A rectangular opening in a wall, in wall coordinates. */
++export interface Hole {
++  a0: number;
++  a1: number;
++  y0: number;
++  y1: number;
++}
++
++const lerpC = (a: RGB, b: RGB, t: number): RGB => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)];
++
++/**
++ * A wall surface between a0..a1 and y0..y1 at offset `n`, with the holes left open. The colour runs from `skin.lo` at y0 to
++ * `skin.hi` at y1 across all pieces, so the gradient is continuous around the openings.
++ */
++export function skinWall(w: Wall, a0: number, a1: number, y0: number, y1: number, holes: readonly Hole[], skin: Skin, rnd: Rng, n = 0): void {
++  const hs = holes
++    .map((h) => ({ a0: Math.max(h.a0, a0), a1: Math.min(h.a1, a1), y0: Math.max(h.y0, y0), y1: Math.min(h.y1, y1) }))
++    .filter((h) => h.a1 > h.a0 + 1e-6 && h.y1 > h.y0 + 1e-6);
++  const ys = new Set<number>([y0, y1]);
++  for (const h of hs) {
++    ys.add(h.y0);
++    ys.add(h.y1);
++  }
++  const yl = [...ys].sort((p, q) => p - q);
++  const amt = skin.amt ?? 0.05;
++  const col = (y: number): RGB => lerpC(skin.lo, skin.hi, (y - y0) / Math.max(1e-6, y1 - y0));
++  w.h.surf(skin.tag ?? SURF.plain, () => {
++    for (let i = 0; i + 1 < yl.length; i++) {
++      const ya = yl[i]!;
++      const yb = yl[i + 1]!;
++      if (yb - ya < 1e-6) continue;
++      const row = hs.filter((h) => h.y0 <= ya + 1e-6 && h.y1 >= yb - 1e-6).sort((p, q) => p.a0 - q.a0);
++      let a = a0;
++      const seg = (sa: number, sb: number): void => {
++        if (sb - sa < 1e-6) return;
++        w.qm(sa, sb, ya, yb, n, col(ya), col(yb), rnd, amt);
++      };
++      for (const h of row) {
++        if (h.a0 > a + 1e-6) seg(a, h.a0);
++        a = Math.max(a, h.a1);
++      }
++      if (a < a1 - 1e-6) seg(a, a1);
++    }
++  });
++}
++
++/** What a window is made of (see {@link windowAt}). */
++export interface WinSpec {
++  /** Centre along the wall, bottom height, width and height of the opening. */
++  a: number;
++  y: number;
++  w: number;
++  h: number;
++  /** How far the glass stands back from the wall face (0 = flat on the wall). */
++  depth: number;
++  frame: RGB;
++  /** Glass colour at the sill and at the head (the sky shows in the upper part). */
++  glass: readonly [RGB, RGB];
++  /** 1 = a single pane, 2 = two sliding sashes, 3 = three. */
++  panes?: 1 | 2 | 3;
++  /** A horizontal bar (transom) at this fraction of the height: the pane above it is a fanlight. */
++  transom?: number;
++  /** Colour of the reveals (jambs and head); defaults to a shade of the frame. */
++  reveal?: RGB;
++  /** A protruding sill: colour, and how far it sticks out. */
++  sill?: RGB;
++  sillOut?: number;
++  /** A curtain gathered at one end (-1, 1) or both (0). */
++  curtain?: RGB;
++  curtainSide?: -1 | 0 | 1;
++  /** A roller blind pulled down over the upper part (fraction of the height). */
++  blind?: { col: RGB; drop: number };
++  /** Optional hood over the window: colour and how far it sticks out. */
++  hood?: RGB;
++  hoodOut?: number;
++  /** Security grille (面格子): vertical bars in front of the glass. */
++  bars?: boolean;
++}
++
++/**
++ * One window in the opening it is given (cut it out of the wall with {@link skinWall} first): reveals, frame, glass in one
++ * to three panes, optional transom, curtain, blind, sill and hood. 24-40 vertices.
++ */
++export function windowAt(w: Wall, s: WinSpec): void {
++  const hw = s.w / 2;
++  const a0 = s.a - hw;
++  const a1 = s.a + hw;
++  const y0 = s.y;
++  const y1 = s.y + s.h;
++  const d = s.depth;
++  const rev = s.reveal ?? tone(s.frame, 0.82);
++  const fw = Math.min(1.3, s.w * 0.1);
++  if (d > 0.05) {
++    // jambs, head
++    w.wq([a0, y0, 0], [a0, y0, -d], [a0, y1, -d], [a0, y1, 0], tone(rev, 0.9), tone(rev, 0.9), rev, rev, [1, 0, 0]);
++    w.wq([a1, y0, 0], [a1, y0, -d], [a1, y1, -d], [a1, y1, 0], tone(rev, 0.8), tone(rev, 0.8), tone(rev, 0.92), tone(rev, 0.92), [-1, 0, 0]);
++    w.wq([a0, y1, 0], [a1, y1, 0], [a1, y1, -d], [a0, y1, -d], tone(rev, 0.78), tone(rev, 0.78), tone(rev, 0.78), tone(rev, 0.78), [0, -1, 0]);
++  }
++  const nf = -d + 0.4; // frame plane
++  const ng = -d + 0.8; // glass plane
++  // frame (the mullions are what shows between the panes)
++  w.q(a0, a1, y0, y1, nf, tone(s.frame, 0.88), s.frame);
++  const [gl, gh] = s.glass;
++  const tY = s.transom !== undefined ? y0 + s.h * s.transom : undefined;
++  const panes = s.panes ?? 2;
++  const pw = (s.w - fw * 2 - (panes - 1) * 0.9) / panes;
++  for (let i = 0; i < panes; i++) {
++    const pa0 = a0 + fw + i * (pw + 0.9);
++    const k = 1 - i * 0.05;
++    if (tY === undefined) {
++      w.q(pa0, pa0 + pw, y0 + fw, y1 - fw, ng, tone(gl, k), tone(gh, k));
++    } else {
++      w.q(pa0, pa0 + pw, y0 + fw, tY - 0.5, ng, tone(gl, k), tone(lerpC(gl, gh, tY / (y1 - y0) - 0.1), k));
++      w.q(pa0, pa0 + pw, tY + 0.5, y1 - fw, ng, tone(lerpC(gl, gh, 0.7), k), tone(gh, k));
++    }
++  }
++  if (s.bars) {
++    const n = Math.max(3, Math.round(s.w / 2.6));
++    for (let i = 0; i <= n; i++) {
++      const a = a0 + fw + ((s.w - fw * 2) * i) / n;
++      w.q(a - 0.25, a + 0.25, y0 + fw, y1 - fw, ng + 0.35, hex(0x4a4c52));
++    }
++  }
++  if (s.curtain) {
++    const lo = tone(s.curtain, 0.86);
++    const iw = s.w - fw * 2;
++    const side = s.curtainSide ?? -1;
++    const yy1 = y1 - fw;
++    if (side === 0) {
++      w.q(a0 + fw, a0 + fw + iw * 0.3, y0 + fw, yy1, ng + 0.25, lo, s.curtain);
++      w.q(a1 - fw - iw * 0.3, a1 - fw, y0 + fw, yy1, ng + 0.25, lo, s.curtain);
++    } else if (side < 0) {
++      w.q(a0 + fw, a0 + fw + iw * 0.5, y0 + fw, yy1, ng + 0.25, lo, s.curtain);
++    } else {
++      w.q(a1 - fw - iw * 0.5, a1 - fw, y0 + fw, yy1, ng + 0.25, lo, s.curtain);
++    }
++  }
++  if (s.blind) {
++    const top = y1 - fw;
++    const bot = top - (s.h - fw * 2) * s.blind.drop;
++    w.q(a0 + fw, a1 - fw, bot, top, ng + 0.25, tone(s.blind.col, 0.9), s.blind.col);
++    w.q(a0 + fw, a1 - fw, bot - 0.5, bot, ng + 0.3, tone(s.blind.col, 0.7));
++  }
++  if (s.sill) {
++    const out = s.sillOut ?? 1.6;
++    const sc = s.sill;
++    // the top runs from the glass to the front edge, so it is also the bottom of the reveal
++    w.wq([a0 - 1, y0, -d], [a1 + 1, y0, -d], [a1 + 1, y0, out], [a0 - 1, y0, out], tone(sc, 0.9), tone(sc, 0.9), tone(sc, 1.05), tone(sc, 1.05), [0, 1, 0]);
++    w.wq([a0 - 1, y0 - 1.5, out], [a1 + 1, y0 - 1.5, out], [a1 + 1, y0, out], [a0 - 1, y0, out], tone(sc, 0.78), tone(sc, 0.78), sc, sc, [0, 0, 1]);
++  } else if (d > 0.05) {
++    // the bottom of the reveal
++    const sc = tone(rev, 1.1);
++    w.wq([a0, y0, 0], [a1, y0, 0], [a1, y0, -d], [a0, y0, -d], tone(sc, 1.06), tone(sc, 1.06), sc, sc, [0, 1, 0]);
++  }
++  if (s.hood) {
++    const out = s.hoodOut ?? 5;
++    const hc = s.hood;
++    // a slanting awning: top face and the two triangular ends
++    const yt = y1 + 1.2;
++    w.wq([a0 - 1.5, yt, 0], [a1 + 1.5, yt, 0], [a1 + 1.5, yt - out * 0.45, out], [a0 - 1.5, yt - out * 0.45, out], hc, hc, tone(hc, 1.08), tone(hc, 1.08), [0, 1, 0.5]);
++    w.wq([a0 - 1.5, yt - out * 0.45, out], [a1 + 1.5, yt - out * 0.45, out], [a1 + 1.5, yt - out * 0.45 - 1.4, out], [a0 - 1.5, yt - out * 0.45 - 1.4, out], tone(hc, 0.82), tone(hc, 0.82), tone(hc, 0.9), tone(hc, 0.9), [0, 0, 1]);
++  }
++}
++
++/** The reveal-less glass of a window on a plain wall (cheap: 8-12 vertices), for walls nobody looks at closely. */
++export function flatWindow(w: Wall, a: number, y: number, ww: number, hh: number, frame: RGB, glass: readonly [RGB, RGB], panes: 1 | 2 = 2): void {
++  const hw = ww / 2;
++  const fw = 1.2;
++  w.q(a - hw, a + hw, y, y + hh, 0.45, tone(frame, 0.88), frame);
++  if (panes === 1) {
++    w.q(a - hw + fw, a + hw - fw, y + fw, y + hh - fw, 0.85, glass[0], glass[1]);
++  } else {
++    w.q(a - hw + fw, a - 0.5, y + fw, y + hh - fw, 0.85, glass[0], glass[1]);
++    w.q(a + 0.5, a + hw - fw, y + fw, y + hh - fw, 0.85, tone(glass[0], 0.94), tone(glass[1], 0.94));
++  }
++}
++
++/**
++ * A protruding band along a wall (a belt course, a slab edge, a cornice): front face, top and underside. `out` is how far it
++ * sticks out. Colours: face at its lower and upper edge.
++ */
++export function ledge(w: Wall, a0: number, a1: number, y0: number, y1: number, out: number, col: RGB, o: { top?: boolean; under?: boolean; tag?: number } = {}): void {
++  const lo = tone(col, 0.86);
++  w.h.surf(o.tag ?? SURF.plain, () => {
++    w.wq([a0, y0, out], [a1, y0, out], [a1, y1, out], [a0, y1, out], lo, lo, col, col, [0, 0, 1]);
++    if (o.top !== false) w.wq([a0, y1, 0], [a1, y1, 0], [a1, y1, out], [a0, y1, out], tone(col, 1.04), tone(col, 1.04), tone(col, 1.12), tone(col, 1.12), [0, 1, 0]);
++    if (o.under !== false) w.wq([a0, y0, 0], [a1, y0, 0], [a1, y0, out], [a0, y0, out], tone(col, 0.62), tone(col, 0.62), tone(col, 0.7), tone(col, 0.7), [0, -1, 0]);
++  });
++}
++
++/**
++ * A rooftop item kit. Each function draws one item standing on y at local (u, v) of the frame in `h`; sizes are the half
++ * extents. They are what real flat roofs carry: a stair/lift head (塔屋), a water tank on legs, an air-conditioning block with
++ * grilles, a pipe duct, a vent hood, a solar rack.
++ */
++export function stairHead(h: HB, u: number, v: number, hu: number, hv: number, y: number, hgt: number, wallCol: RGB, rnd: Rng): void {
++  const top = y + hgt;
++  const base = tone(wallCol, 0.9);
++  h.box(u - hu, u + hu, y, top, v - hv, v + hv, base, 'fblr', { lo: tone(base, 0.8) });
++  h.flat(u - hu - 0.8, u + hu + 0.8, v - hv - 0.8, v + hv + 0.8, top + 0.8, tone(wallCol, 1.06));
++  h.box(u - hu - 0.8, u + hu + 0.8, top, top + 0.8, v - hv - 0.8, v + hv + 0.8, tone(wallCol, 0.95), 'fblr');
++  // the door on the front, with a little hood
++  const dw = Math.min(4, hu * 0.5);
++  h.wallV(u - dw, u + dw, y, y + Math.min(14, hgt - 3), v + hv + 0.3, 1, hex(0x6a7078), hex(0x8a9098));
++  h.box(u - dw - 0.8, u + dw + 0.8, y + Math.min(14, hgt - 3), y + Math.min(14, hgt - 3) + 0.9, v + hv, v + hv + 3, tone(wallCol, 0.8), 'ft');
++  void rnd;
++}
++
++export function waterTank(h: HB, u: number, v: number, y: number, r: number, hgt: number, rnd: Rng): void {
++  const p = h.f.pt(u, 0, v);
++  const col = tone(hex(0xc9d3dc), 0.94 + rnd() * 0.1);
++  // four legs and a frame, then an eight-sided tank with a lid and a ladder
++  for (const [du, dv] of [[-1, -1], [1, -1], [1, 1], [-1, 1]] as const) {
++    h.box(u + du * (r - 0.9) - 0.5, u + du * (r - 0.9) + 0.5, y, y + 4, v + dv * (r - 0.9) - 0.5, v + dv * (r - 0.9) + 0.5, hex(0x7e868e), 'fblr');
++  }
++  h.box(u - r, u + r, y + 3.6, y + 4.4, v - r, v + r, hex(0x6a727a), 'fblrt');
++  h.prism(p[0], p[2], y + 4.4, y + 4.4 + hgt, r * 0.95, r * 0.95, 8, col, false);
++  h.prism(p[0], p[2], y + 4.4 + hgt, y + 4.4 + hgt + 1.2, r * 0.7, r * 0.5, 8, tone(col, 0.8), true);
++  h.wallV(u + r * 0.2, u + r * 0.2 + 0.6, y + 4.4, y + 4.4 + hgt, v + r + 0.3, 1, hex(0x58606a));
++}
++
++/** An air-conditioning block: a box with fan grilles on its front. */
++export function hvacUnit(h: HB, u: number, v: number, y: number, hu: number, hv: number, hgt: number, rnd: Rng): void {
++  const col = rnd() < 0.5 ? hex(0xd7dbdd) : hex(0xe6e8e4);
++  h.box(u - hu, u + hu, y + 1, y + 1 + hgt, v - hv, v + hv, col, 'fblrt', { lo: tone(col, 0.86), top: tone(col, 1.05) });
++  h.box(u - hu + 0.5, u + hu - 0.5, y, y + 1, v - hv + 0.5, v + hv - 0.5, hex(0x6e747a), 'fblr');
++  const n = Math.max(1, Math.round(hu / 4));
++  for (let i = 0; i < n; i++) {
++    const cu = u - hu + ((i + 0.5) * hu * 2) / n;
++    h.wallV(cu - 2, cu + 2, y + 1.6, y + hgt, v + hv + 0.15, 1, hex(0x4c5158), hex(0x5d636a));
++  }
++}
++
++/** A rail along a rooftop edge or a stair: posts every ~10 units and two rails, on the local line from (a0, v) to (a1, v). */
++export function railing(h: HB, a0: number, a1: number, v: number, y: number, hgt: number, col: RGB, post = 10): void {
++  const n = Math.max(1, Math.round(Math.abs(a1 - a0) / post));
++  for (let i = 0; i <= n; i++) {
++    const a = a0 + ((a1 - a0) * i) / n;
++    h.box(a - 0.3, a + 0.3, y, y + hgt, v - 0.3, v + 0.3, col, 'fblr');
++  }
++  h.box(Math.min(a0, a1), Math.max(a0, a1), y + hgt - 0.5, y + hgt + 0.3, v - 0.3, v + 0.3, col, 'ft');
++  h.box(Math.min(a0, a1), Math.max(a0, a1), y + hgt * 0.45, y + hgt * 0.45 + 0.5, v - 0.2, v + 0.2, col, 'f');
++}
++
++export type { L3 };
+diff --git a/src/town/housekit.ts b/src/town/housekit.ts
+index c90f946..14a09b0 100644
+--- a/src/town/housekit.ts
++++ b/src/town/housekit.ts
+@@ -43,6 +43,27 @@ export function drift(c: RGB, rnd: Rng, amt: number): RGB {
+ export class HB {
+   constructor(readonly b: MeshBatch, readonly f: Frame) {}
+ 
++  /**
++   * Gives `n` vertices just pushed the batch's current surface tag (see SURF in surface.ts), exactly like MeshBatch does
++   * for its own quads. Without this the tag buffer would run short of the vertex count as soon as a chunk mixes indexed
++   * and plain quads.
++   */
++  private tag(n: number): void {
++    const B = this.b;
++    const t = B.surface + 10 * B.axis;
++    for (let i = 0; i < n; i++) B.surf.push(t);
++    // MeshBatch only uploads the tag buffer when it has seen a non-zero tag (a private flag: set it the same way push() does)
++    if (t !== 0) (B as unknown as { tagged: boolean }).tagged = true;
++  }
++
++  /** Draws `fn` with the surface tag `kind` (a SURF value) on every quad, then restores the previous one. */
++  surf(kind: number, fn: () => void): void {
++    const prev = this.b.surface;
++    this.b.surface = kind;
++    fn();
++    this.b.surface = prev;
++  }
++
+   /** Indexed quad a,b,c,d (in order around the perimeter) with a colour per corner; `hint` = outward direction. */
+   quadC(a: V3, b: V3, c: V3, d: V3, ca: RGB, cb: RGB, cc: RGB, cd: RGB, hint: V3): void {
+     const B = this.b;
+@@ -60,6 +81,7 @@ export class HB {
+     B.pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2], d[0], d[1], d[2]);
+     B.nor.push(nx, ny, nz, nx, ny, nz, nx, ny, nz, nx, ny, nz);
+     B.col.push(ca[0], ca[1], ca[2], 1, cb[0], cb[1], cb[2], 1, cc[0], cc[1], cc[2], 1, cd[0], cd[1], cd[2], 1);
++    this.tag(4);
+     if (B.withUV) B.uvs.push(0, 0, 0, 0, 0, 0, 0, 0);
+     // same winding rule as MeshBatch.tri (the lighting of back-face-culling-free, two-sided materials depends on it)
+     if (along) B.idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
+@@ -88,6 +110,7 @@ export class HB {
+     B.pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
+     B.nor.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
+     B.col.push(ca[0], ca[1], ca[2], 1, cb[0], cb[1], cb[2], 1, cc[0], cc[1], cc[2], 1);
++    this.tag(3);
+     if (B.withUV) B.uvs.push(0, 0, 0, 0, 0, 0);
+     if (along) B.idx.push(base, base + 2, base + 1);
+     else B.idx.push(base, base + 1, base + 2);
