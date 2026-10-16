@@ -20,8 +20,10 @@ export interface Ctx {
   main: ChunkedBatch;
   /** Mountain forest trees (chunked). */
   forest: ChunkedBatch;
-  /** Signboards sharing the atlas texture. */
+  /** Signboards sharing the atlas texture (also shop interiors, posters and other picture details). */
   signs: ChunkedBatch;
+  /** Window panes: transparent, with texture coordinates for the reflection streaks. */
+  glass: ChunkedBatch;
   /** Ground decal layers, drawn with increasing depth bias: pads+sidewalks, lawns+ballast, asphalt+paths, markings+petals. */
   dec0: MeshBatch;
   dec1: MeshBatch;
