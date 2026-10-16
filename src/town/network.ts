@@ -103,24 +103,8 @@ export function buildRoads(c: Ctx): void {
   }
 }
 
-/** Zebra crossings where a street meets the plaza ellipse and at a few junction arms. */
-export function buildCrossings(c: Ctx): void {
-  const spots: { x: number; z: number; nx: number; nz: number; w: number }[] = [];
-  for (const r of roadsW) {
-    if (r.id === 'main-street') {
-      const p = r.pts[0]!;
-      spots.push({ x: p.x, z: p.z - 160, nx: 1, nz: 0, w: r.width });
-    }
-  }
-  for (const sp of spots) {
-    // stripes run along the road (direction perpendicular to n); n points across the road
-    for (let k = -4; k <= 4; k++) {
-      const off = (k / 4) * (sp.w / 2 - 8);
-      const a: V3 = [sp.x + sp.nx * off - 4, heightAt(sp.x, sp.z) + DEC3_Y, sp.z + sp.nz * off - 14];
-      c.dec3.quad(a, [a[0] + 8, a[1], a[2]], [a[0] + 8, a[1], a[2] + 28], [a[0], a[1], a[2] + 28], LINE, [0, 1, 0]);
-    }
-  }
-}
+// Zebra crossings, stop lines and the other street surface (kerbs, paving, tactile blocks, ...) are built from the
+// junction layout in streetscape.ts, on top of the flat asphalt and sidewalk ribbons laid down by buildRoads.
 
 /** Distance (along x) helpers for the straight station section. */
 export function railCrossings(): { x: number; z: number; nx: number; nz: number; w: number }[] {
