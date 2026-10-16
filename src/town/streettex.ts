@@ -378,7 +378,7 @@ export function asphaltTexture(scene: Scene): DynamicTexture {
   const H = 512;
   return make(scene, 'streetAsphalt', W, H, (g) => {
     const rnd = makeRng(31337);
-    const base: C3 = [75, 78, 88];
+    const base: C3 = [100, 103, 114];
     g.fillStyle = css(base);
     g.fillRect(0, 0, W, H);
     for (let i = 0; i < 70; i++) {

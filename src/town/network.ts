@@ -8,7 +8,7 @@ import { stationObstacles } from './stationplan';
 import { heightAt } from './terrain';
 import { hex, type RGB, type V3 } from './util';
 
-const ASPHALT = hex(0x4a4d57);
+const ASPHALT = hex(0x62656f);
 const SIDEWALK = hex(0xc9c6bd);
 const LINE = hex(0xf4f4ee);
 const BALLAST = hex(0x8c857c);
