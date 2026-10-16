@@ -86,7 +86,7 @@ export function setupRendering(
 
   const pipe = new DefaultRenderingPipeline('post', true, scene, [camera]);
   pipe.samples = 4;
-  pipe.fxaaEnabled = false;
+  pipe.fxaaEnabled = true;
   pipe.bloomEnabled = true;
   pipe.bloomThreshold = 0.82;
   pipe.bloomWeight = 0.22;
