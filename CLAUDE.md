@@ -13,6 +13,10 @@
 2. `npm test`
 3. `npm run shot` を実行し、`screenshots/shot.png` を実際に見て確認する（`--query "?a=b"` `--wait` `--out` が使える）。
 
+見た目の変更は `npm run eval -- --tag <日付>_<名前>` で比較カット5枚（`?view=ref1`〜`ref5`）を撮り、`docs/20261016_visual_eval.md` のルーブリックで採点する。
+
+描画品質は `?gfx=high`（太陽の影・SSAO・ブルーム・トーンマッピング）と `?gfx=low`（影と後処理なし）。指定がないときは、ソフトウェア描画（ヘッドレスの SwiftShader など）なら low、GPU があれば high。`npm run eval` は high で撮る（1フレーム数秒かかるので待つ）。
+
 ヘッドレス Chromium は GPU がないため、SwiftShader のフラグ（`--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader --ignore-gpu-blocklist`）で起動する。`playwright install` は実行しない（`/opt/pw-browsers` に導入済み）。
 
 ## MMD モデル（babylon-mmd）

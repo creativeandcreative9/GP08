@@ -22,7 +22,7 @@ const today = new Date().toISOString().slice(0, 10).replaceAll('-', '');
 const tag = arg('tag', `${today}_eval`);
 const views = arg('views', 'ref1,ref2,ref3,ref4,ref5').split(',').filter(Boolean);
 const wait = Number(arg('wait', '1500'));
-const extra = arg('query', '');
+const extra = arg('query', '&gfx=high'); // full quality even on the software renderer
 const refsDir = path.resolve(arg('refs', path.join('..', 'gp08-assets', 'refs')));
 const port = Number(process.env.GP08_PORT ?? 5178);
 const outDir = path.resolve('screenshots', 'eval', tag);
@@ -175,12 +175,17 @@ try {
   const ours = {};
   for (const v of views) {
     await page.goto(`http://127.0.0.1:${port}/?model=none&view=${v}${extra}`);
-    await page.waitForFunction(() => window.__gp08 && window.__gp08.ready === true, null, { timeout: 120000 });
+    await page.waitForFunction(() => window.__gp08 && window.__gp08.ready === true, null, { timeout: 600000 });
     await page.addStyleTag({ content: '#hud, #help { display: none !important; }' });
     await page.waitForTimeout(wait);
+    // the software renderer can take seconds per frame: stop the loop so the page is idle for the capture
+    const fps = await page.evaluate(() => {
+      const t = document.getElementById('fps')?.textContent ?? '';
+      window.__gp08.scene?.getEngine().stopRenderLoop();
+      return t;
+    });
     const file = path.join(outDir, `${v}.png`);
-    await page.locator('canvas').screenshot({ path: file });
-    const fps = await page.evaluate(() => document.getElementById('fps')?.textContent ?? '');
+    await page.locator('canvas').screenshot({ path: file, timeout: 300000 });
     ours[v] = { file: path.relative(process.cwd(), file), fps, ...(await page.evaluate(metricsInPage, { url: toDataUrl(file), top: 0, bottom: 0 })) };
     console.log(`shot ${v}: ${ours[v].file} (${fps})`);
     if (v === views[0]) for (const line of report) console.log(line); // town build report (counts, vertex budget)

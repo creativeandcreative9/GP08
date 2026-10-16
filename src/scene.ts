@@ -5,13 +5,11 @@ import {
   DirectionalLight,
   type Engine,
   HemisphericLight,
-  Mesh,
-  MeshBuilder,
   Scene,
-  StandardMaterial,
   Vector3,
-  VertexBuffer,
 } from '@babylonjs/core';
+import { LIGHT, setupRendering, type Rendering } from './render';
+import { createSky, HORIZON } from './sky';
 import { SPAWN } from './town/layout';
 import { buildTown, type Town } from './town/build';
 import { roadClearance, roadsW } from './town/site';
@@ -20,40 +18,7 @@ export interface GameScene {
   scene: Scene;
   camera: ArcRotateCamera;
   town: Town;
-}
-
-const HORIZON = new Color3(0.8, 0.91, 0.99);
-const ZENITH = new Color3(0.27, 0.56, 0.93);
-
-/** Gradient sky dome that follows the camera. */
-function createSky(scene: Scene): Mesh {
-  const sky = MeshBuilder.CreateSphere('sky', { diameter: 56000, segments: 24, sideOrientation: Mesh.BACKSIDE }, scene);
-  const pos = sky.getVerticesData(VertexBuffer.PositionKind)!;
-  const colors: number[] = [];
-  for (let i = 0; i < pos.length; i += 3) {
-    const e = Math.max(0, pos[i + 1]! / 28000);
-    const t = Math.pow(Math.min(1, e * 1.35), 0.62);
-    colors.push(
-      HORIZON.r + (ZENITH.r - HORIZON.r) * t,
-      HORIZON.g + (ZENITH.g - HORIZON.g) * t,
-      HORIZON.b + (ZENITH.b - HORIZON.b) * t,
-      1,
-    );
-  }
-  sky.setVerticesData(VertexBuffer.ColorKind, colors);
-  const m = new StandardMaterial('skyMat', scene);
-  m.disableLighting = true;
-  m.diffuseColor = Color3.Black();
-  m.specularColor = Color3.Black();
-  m.emissiveColor = Color3.White();
-  m.backFaceCulling = false;
-  m.fogEnabled = false;
-  sky.material = m;
-  sky.infiniteDistance = true;
-  sky.isPickable = false;
-  sky.applyFog = false;
-  sky.alwaysSelectAsActiveMesh = true;
-  return sky;
+  rendering: Rendering;
 }
 
 const VIEWS = ['overview', 'street', 'summit', 'platform', 'alley', 'ref1', 'ref2', 'ref3', 'ref4', 'ref5'] as const;
@@ -96,7 +61,7 @@ function applyView(camera: ArcRotateCamera, scene: Scene, town: Town, view: View
   switch (view) {
     case 'overview':
       scene.fogDensity = 0.000013;
-      scene.getMeshByName('clouds')?.setEnabled(false); // the camera is above them
+      scene.getTransformNodeByName('clouds')?.setEnabled(false); // the camera is above them
       camera.setTarget(new Vector3(250, 0, -250));
       camera.alpha = -Math.PI / 2 - 0.1;
       camera.beta = 0.5;
@@ -196,7 +161,7 @@ export function createScene(engine: Engine, canvas: HTMLCanvasElement): GameScen
   scene.clearColor = new Color4(HORIZON.r, HORIZON.g, HORIZON.b, 1);
   scene.fogMode = Scene.FOGMODE_EXP2;
   scene.fogColor = new Color3(HORIZON.r, HORIZON.g, HORIZON.b);
-  scene.fogDensity = 0.00005;
+  scene.fogDensity = 0.0001;
 
   const camera = new ArcRotateCamera('camera', -Math.PI / 2, Math.PI / 3, 40, new Vector3(0, 2, 0), scene);
   camera.minZ = 1;
@@ -208,25 +173,31 @@ export function createScene(engine: Engine, canvas: HTMLCanvasElement): GameScen
   camera.panningSensibility = 40;
   camera.attachControl(canvas, true);
 
-  // Spring daylight: sky-blue ambient, warm sun from the south-east.
+  // Spring afternoon: cool sky light, warm sun from the south-east low enough for long soft shadows.
   const hemi = new HemisphericLight('hemi', new Vector3(0, 1, 0), scene);
-  hemi.intensity = 0.8;
-  hemi.diffuse = new Color3(1, 0.985, 0.975);
-  hemi.groundColor = new Color3(0.84, 0.78, 0.78);
+  hemi.intensity = LIGHT.skyIntensity;
+  hemi.diffuse = LIGHT.skyColor.clone();
+  hemi.groundColor = LIGHT.groundColor.clone();
   hemi.specular = Color3.Black();
-  const sun = new DirectionalLight('sun', new Vector3(-0.55, -0.75, 0.5).normalize(), scene);
-  sun.intensity = 0.62;
-  sun.diffuse = new Color3(1, 0.94, 0.82);
+  const sun = new DirectionalLight('sun', new Vector3(-0.6, -0.62, 0.55).normalize(), scene);
+  sun.intensity = LIGHT.sunIntensity;
+  sun.diffuse = LIGHT.sunColor.clone();
   sun.specular = new Color3(0.3, 0.3, 0.28);
 
   createSky(scene);
   const town = buildTown(scene);
   for (const line of town.report) console.info(`[town] ${line}`);
 
+  // town geometry casts and receives sun shadows; signs, decals and the terrain only receive them
+  const townMeshes = town.root.getChildMeshes(true);
+  const casters = townMeshes.filter((m) => m.name.startsWith('town_') || m.name.startsWith('forest_'));
+  const receivers = [...townMeshes.filter((m) => m.name !== 'clouds' && m.name !== 'sea'), ...scene.meshes.filter((m) => m.name === 'terrain')];
+  const rendering = setupRendering(scene, camera, sun, casters, receivers);
+
   scene.metadata = { ...(scene.metadata ?? {}), town };
   const q = new URLSearchParams(location.search).get('view');
   const view: View = (VIEWS as readonly string[]).includes(q ?? '') ? (q as View) : 'default';
   applyView(camera, scene, town, view);
 
-  return { scene, camera, town };
+  return { scene, camera, town, rendering };
 }

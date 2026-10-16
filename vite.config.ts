@@ -85,7 +85,8 @@ function privateAssets(): Plugin {
 
 export default defineConfig({
   plugins: [privateAssets()],
-  server: { port: PORT, host: '127.0.0.1', strictPort: true },
+  // .claude/ holds agent worktrees (other checkouts of this repository): don't watch them
+  server: { port: PORT, host: '127.0.0.1', strictPort: true, watch: { ignored: ['**/.claude/**'] } },
   preview: { port: PORT, host: '127.0.0.1', strictPort: true },
   // babylon-mmd loads its wasm via new URL(..., import.meta.url), so it must not be pre-bundled.
   // @babylonjs/core is excluded too: otherwise the app and babylon-mmd would get two copies of it

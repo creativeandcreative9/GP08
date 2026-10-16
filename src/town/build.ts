@@ -2,7 +2,6 @@ import { Color3, Mesh, StandardMaterial, TransformNode, type Scene } from '@baby
 import { ChunkedBatch, MeshBatch } from './batch';
 import type { Ctx, Spot } from './ctx';
 import { LOTS } from './layout';
-import { buildClouds } from './clouds';
 import { buildInfill } from './infill';
 import { buildLots } from './lots';
 import { SMALL_SHOPS } from './shops';
@@ -120,7 +119,6 @@ export function buildTown(scene: Scene): Town {
     c.dec1.toMesh('decals1', scene, d1),
     c.dec2.toMesh('decals2', scene, d2),
     c.dec3.toMesh('decals3', scene, d3),
-    buildClouds().toMesh('clouds', scene, mainMat),
   ];
   for (const m of meshes) m.parent = root;
   for (const mat of [mainMat, d0, d1, d2, d3]) mat.freeze();

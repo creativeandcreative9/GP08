@@ -43,6 +43,7 @@ function main(): void {
     }
     const runtime = await createMmdRuntime(scene);
     const model = await loadMmdModel(scene, runtime, key);
+    for (const m of [model.mesh, ...model.mesh.getChildMeshes()]) game.rendering.addShadowCaster(m);
     const player = new Player({
       scene,
       camera,
