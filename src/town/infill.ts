@@ -5,6 +5,7 @@ import type { Lot } from './layout';
 import { addParking } from './parking';
 import { addShop, SMALL_SHOPS } from './shops';
 import { samplePolyline } from './network';
+import { frameRect } from './publicbldg';
 import { OccGrid, roadClearance, roadsW } from './site';
 import { pick, type Rect } from './util';
 
@@ -26,8 +27,28 @@ interface Spec {
 }
 
 /**
+ * How far each kind of building reaches beyond its walls (block walls, front yard, awnings, balconies),
+ * in its local frame. The claimed ground is the footprint grown by these, plus a narrow gap (GAP) all round,
+ * so neighbours can stand eaves to eaves like in a real Japanese town without their walls overlapping.
+ */
+function reach(kind: Kind, lite: boolean): { front: number; back: number; side: number } {
+  switch (kind) {
+    case 'house':
+      return lite ? { front: 12, back: 0, side: 5 } : { front: 12, back: 9, side: 9 };
+    case 'shop':
+      return { front: 20, back: 0, side: 0 };
+    case 'apart':
+      return { front: 6, back: 6, side: 0 };
+    case 'parking':
+      return { front: 0, back: 0, side: 0 };
+  }
+}
+const GAP = 5;
+
+/**
  * Fills the empty ground of the town with ordinary buildings: first rows of buildings facing every street
- * (bigger and taller on the main streets), then the interior blocks. Deterministic (uses the context RNG).
+ * (bigger and taller on the main streets), then the interior blocks, and finally packs whatever ground is
+ * left with small houses so that the town reads as densely built. Deterministic (uses the context RNG).
  */
 export function buildInfill(c: Ctx, grid: OccGrid): InfillStats {
   const r = c.rnd;
@@ -37,14 +58,15 @@ export function buildInfill(c: Ctx, grid: OccGrid): InfillStats {
 
   /** Try to build a spec with its centre at (cx,cz). Returns true on success. */
   const build = (s: Spec, cx: number, cz: number, wx: number, dz: number, lite: boolean): boolean => {
-    const infl = s.kind === 'house' ? 11 : 6;
     const rect: Rect = { minX: cx - wx / 2, maxX: cx + wx / 2, minZ: cz - dz / 2, maxZ: cz + dz / 2 };
-    if (!grid.free(rect, infl)) return false;
-    grid.claim(rect, infl);
     const nr = roadClearance(cx, cz);
     const f = frameFacing(cx, cz, nr.px, nr.pz);
     const hu = f.fx === 0 ? wx / 2 : dz / 2;
     const hv = f.fx === 0 ? dz / 2 : wx / 2;
+    const e = reach(s.kind, lite);
+    const plot = frameRect(f, -hu - e.side, hu + e.side, -hv - e.back, hv + e.front);
+    if (!grid.free(plot, GAP)) return false;
+    grid.claim(plot, GAP);
     switch (s.kind) {
       case 'house':
         if (lite) addHouseLite(c, rect, f, hu, hv, s.floors);
@@ -111,23 +133,24 @@ export function buildInfill(c: Ctx, grid: OccGrid): InfillStats {
           const alongX = Math.abs(q.nz) > Math.abs(q.nx); // normal along z => road runs along x
           const wx = alongX ? Lw : Dp;
           const dz = alongX ? Dp : Lw;
-          const infl = base.kind === 'house' ? 11 : 6;
+          const lite = !main && base.kind === 'house';
+          const e = reach(base.kind, lite);
           const half = (Math.abs(q.nx) * wx + Math.abs(q.nz) * dz) / 2;
           for (let off = 0; off <= 44; off += 4) {
-            const d = hw + 15 + infl + half + off;
+            const d = hw + 15 + GAP + e.front + half + off;
             const cx = q.x + q.nx * side * d;
             const cz = q.z + q.nz * side * d;
-            if (build({ ...base, W: Lw, D: Dp }, cx, cz, wx, dz, !main && base.kind === 'house')) {
+            if (build({ ...base, W: Lw, D: Dp }, cx, cz, wx, dz, lite)) {
               placed = true;
               break;
             }
           }
           if (placed) {
-            s += Lw + range(2, 12);
+            s += Lw + 2 * (e.side + GAP) + range(0, 4);
             break;
           }
         }
-        if (!placed) s += 28;
+        if (!placed) s += 10;
       }
     }
   }
@@ -164,6 +187,26 @@ export function buildInfill(c: Ctx, grid: OccGrid): InfillStats {
           const horiz = r() < 0.5;
           if (build(spec, cx, cz, horiz ? W : D, horiz ? D : W, true)) break;
         }
+      }
+    }
+  }
+
+  // ---- pass D: pack the leftover ground with small houses, scanning row by row ----
+  // A house's plot reaches at most PAD beyond its walls, so centring it PAD + half a size past the scan point
+  // keeps its plot starting at (or just after) the first free cell.
+  const PAD = 12 + GAP;
+  for (let z = z0; z < z1; z += b.cell) {
+    for (let x = x0; x < x1; x += b.cell) {
+      if (!b.free({ minX: x, maxX: x, minZ: z, maxZ: z }, 0)) continue;
+      const W0 = range(78, 104);
+      const D0 = range(66, 86);
+      const floors = r() < 0.7 ? 2 : 1;
+      for (const sc of [1, 0.85, 0.72]) {
+        const horiz = r() < 0.5;
+        const wx = (horiz ? W0 : D0) * sc;
+        const dz = (horiz ? D0 : W0) * sc;
+        const spec: Spec = { kind: 'house', W: wx, D: dz, floors, main: false };
+        if (build(spec, x + PAD + wx / 2, z + PAD + dz / 2, wx, dz, true)) break;
       }
     }
   }

@@ -83,7 +83,7 @@ export function buildTown(scene: Scene): Town {
   mark('station+plaza');
   const reserved = buildLots(c);
   mark('lots');
-  const grid = OccGrid.build({ minX: -3900, maxX: 4450, minZ: -3350, maxZ: 3050 }, 10);
+  const grid = OccGrid.build({ minX: -3900, maxX: 4450, minZ: -3350, maxZ: 3050 }, 5);
   for (const p of reserved) grid.claim(p, 2);
   for (const o of c.obstacles) grid.claim(o, 7);
   const infill = buildInfill(c, grid);
