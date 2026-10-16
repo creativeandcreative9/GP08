@@ -1,4 +1,5 @@
 import { Mesh, VertexData, type Material, type Scene } from '@babylonjs/core';
+import { SURF, SURF_KIND } from '../surface';
 import type { RGB, V3 } from './util';
 
 const ICO_T = (1 + Math.sqrt(5)) / 2;
@@ -32,6 +33,11 @@ export class MeshBatch {
   col: number[] = [];
   uvs: number[] = [];
   idx: number[] = [];
+  /** Surface tag per vertex (see SURF in surface.ts), for the procedural surface detail. */
+  surf: number[] = [];
+  /** Tag given to the vertices emitted from now on. */
+  surface: number = SURF.plain;
+  private tagged = false;
   constructor(readonly withUV = false) {}
 
   get vertexCount(): number {
@@ -48,6 +54,8 @@ export class MeshBatch {
     this.pos.push(p[0], p[1], p[2]);
     this.nor.push(n[0], n[1], n[2]);
     this.col.push(c[0], c[1], c[2], 1);
+    this.surf.push(this.surface);
+    if (this.surface !== SURF.plain) this.tagged = true;
     if (this.withUV) this.uvs.push(u, v);
   }
 
@@ -107,20 +115,25 @@ export class MeshBatch {
     ridge: 'x' | 'z', overhang: number, roof: RGB, gableWall: RGB,
   ): void {
     const drop = Math.min(3, rise * 0.15);
+    const prev = this.surface;
     if (ridge === 'z') {
       const cx = (x0 + x1) / 2;
       const yr = yEave + rise;
       const ya = x0 - overhang, yb = x1 + overhang, za = z0 - overhang, zb = z1 + overhang;
+      this.surface = SURF.roofTiles;
       this.quad([ya, yEave - drop, za], [cx, yr, za], [cx, yr, zb], [ya, yEave - drop, zb], roof, [-rise, (x1 - x0) / 2, 0]);
       this.quad([yb, yEave - drop, zb], [cx, yr, zb], [cx, yr, za], [yb, yEave - drop, za], roof, [rise, (x1 - x0) / 2, 0]);
+      this.surface = prev;
       this.tri([x0, yEave, z0], [cx, yr, z0], [x1, yEave, z0], gableWall, [0, 0, -1]);
       this.tri([x0, yEave, z1], [x1, yEave, z1], [cx, yr, z1], gableWall, [0, 0, 1]);
     } else {
       const cz = (z0 + z1) / 2;
       const yr = yEave + rise;
       const xa = x0 - overhang, xb = x1 + overhang, za = z0 - overhang, zb = z1 + overhang;
+      this.surface = SURF.roofTiles;
       this.quad([xa, yEave - drop, za], [xa, yr, cz], [xb, yr, cz], [xb, yEave - drop, za], roof, [0, (z1 - z0) / 2, -rise]);
       this.quad([xb, yEave - drop, zb], [xb, yr, cz], [xa, yr, cz], [xa, yEave - drop, zb], roof, [0, (z1 - z0) / 2, rise]);
+      this.surface = prev;
       this.tri([x0, yEave, z0], [x0, yr, cz], [x0, yEave, z1], gableWall, [-1, 0, 0]);
       this.tri([x1, yEave, z0], [x1, yEave, z1], [x1, yr, cz], gableWall, [1, 0, 0]);
     }
@@ -199,6 +212,7 @@ export class MeshBatch {
     if (this.withUV) vd.uvs = new Float32Array(this.uvs);
     vd.indices = this.vertexCount > 65535 ? new Uint32Array(this.idx) : new Uint16Array(this.idx);
     vd.applyToMesh(mesh);
+    if (this.tagged) mesh.setVerticesData(SURF_KIND, new Float32Array(this.surf), false, 1);
     mesh.material = material;
     mesh.isPickable = false;
     mesh.freezeWorldMatrix();

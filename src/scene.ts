@@ -10,6 +10,7 @@ import {
 } from '@babylonjs/core';
 import { LIGHT, setupRendering, type Rendering } from './render';
 import { createSky, HORIZON } from './sky';
+import { applySurfaceDetail } from './surface';
 import { SPAWN } from './town/layout';
 import { buildTown, type Town } from './town/build';
 import { roadClearance, roadsW } from './town/site';
@@ -193,6 +194,7 @@ export function createScene(engine: Engine, canvas: HTMLCanvasElement): GameScen
   const casters = townMeshes.filter((m) => m.name.startsWith('town_') || m.name.startsWith('forest_'));
   const receivers = [...townMeshes.filter((m) => m.name !== 'clouds' && m.name !== 'sea'), ...scene.meshes.filter((m) => m.name === 'terrain')];
   const rendering = setupRendering(scene, camera, sun, casters, receivers);
+  applySurfaceDetail(scene);
 
   scene.metadata = { ...(scene.metadata ?? {}), town };
   const q = new URLSearchParams(location.search).get('view');
