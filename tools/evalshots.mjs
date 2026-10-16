@@ -174,7 +174,7 @@ try {
   });
   const ours = {};
   for (const v of views) {
-    await page.goto(`http://127.0.0.1:${port}/?model=none&view=${v}${extra}`);
+    await page.goto(`http://127.0.0.1:${port}/?model=none&view=${v}${extra}`, { timeout: 300000 });
     await page.waitForFunction(() => window.__gp08 && window.__gp08.ready === true, null, { timeout: 600000 });
     await page.addStyleTag({ content: '#hud, #help { display: none !important; }' });
     await page.waitForTimeout(wait);
