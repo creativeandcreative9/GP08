@@ -12,6 +12,7 @@ import {
   Vector3,
   VertexBuffer,
 } from '@babylonjs/core';
+import { createFallingPetals } from './petals';
 import { SPAWN } from './town/layout';
 import { buildTown, type Town } from './town/build';
 import { roadClearance, roadsW } from './town/site';
@@ -220,6 +221,7 @@ export function createScene(engine: Engine, canvas: HTMLCanvasElement): GameScen
   sun.specular = new Color3(0.3, 0.3, 0.28);
 
   createSky(scene);
+  createFallingPetals(scene);
   const town = buildTown(scene);
   for (const line of town.report) console.info(`[town] ${line}`);
 
