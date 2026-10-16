@@ -168,6 +168,10 @@ try {
     failed = true;
     console.error(`[pageerror] ${e.message}`);
   });
+  const report = [];
+  page.on('console', (m) => {
+    if (m.text().startsWith('[town]')) report.push(m.text());
+  });
   const ours = {};
   for (const v of views) {
     await page.goto(`http://127.0.0.1:${port}/?model=none&view=${v}${extra}`);
@@ -179,6 +183,7 @@ try {
     const fps = await page.evaluate(() => document.getElementById('fps')?.textContent ?? '');
     ours[v] = { file: path.relative(process.cwd(), file), fps, ...(await page.evaluate(metricsInPage, { url: toDataUrl(file), top: 0, bottom: 0 })) };
     console.log(`shot ${v}: ${ours[v].file} (${fps})`);
+    if (v === views[0]) for (const line of report) console.log(line); // town build report (counts, vertex budget)
   }
 
   // optional reference images
