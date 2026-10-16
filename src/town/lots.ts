@@ -5,6 +5,7 @@ import { addApartment, addHouse } from './houses';
 import { LOTS, type Lot } from './layout';
 import { addPark } from './parks';
 import { addBank, addCampus, addGym, addHospital, frameRect } from './publicbldg';
+import { addFeatured, FEATURED } from './featured';
 import { addHotel, addShop } from './shops';
 import { freeRects, lotRect, roadClearance, siteBlock } from './site';
 import { addCherry } from './trees';
@@ -36,6 +37,15 @@ function frameFor(r: Rect): { f: Frame; hu: number; hv: number } {
 
 const area = (r: Rect): number => (r.maxX - r.minX) * (r.maxZ - r.minZ);
 
+/**
+ * Lots whose place was changed from the hand-drawn map (map px, same meaning as in layout.ts) so that a hand-built
+ * shop stands along a straight street. The cafe moves from the diagonal cherry avenue (where trunks stood right in
+ * front of its terrace) to the north side of the west road, looking at the plaza's cherry trees.
+ */
+const RELOCATED: Readonly<Record<string, { x: number; y: number; w: number; d: number }>> = {
+  'w-cafe': { x: 466, y: 444, w: 36, d: 78 },
+};
+
 function siteBlocked(r: Rect): boolean {
   for (let x = r.minX; x <= r.maxX; x += 8) for (let z = r.minZ; z <= r.maxZ; z += 8) if (siteBlock(x, z)) return true;
   return siteBlock(r.maxX, r.maxZ) !== undefined;
@@ -45,12 +55,13 @@ function siteBlocked(r: Rect): boolean {
  * Hand-drawn blocks often stop well short of the street, and the infill would then put a row of houses in
  * front of the shop. Pull the building forward so that its front stands just behind the sidewalk.
  */
-function pullToStreet(f: Frame, hu: number, hv: number, claimed: readonly Rect[], own: Rect): Frame {
+function pullToStreet(f: Frame, hu: number, hv: number, claimed: readonly Rect[], own: Rect, yard = 0): Frame {
   const fc = f.pt(0, 0, hv);
   const gap = roadClearance(fc[0], fc[2]).d;
-  for (let shift = Math.floor(Math.max(0, gap - 26) / 4) * 4; shift > 0; shift -= 4) {
+  // `yard`: extra depth in front of the facade (a terrace, a bench) that must stay clear of the road's sidewalk
+  for (let shift = Math.floor(Math.max(0, gap - 26 - yard) / 4) * 4; shift > 0; shift -= 4) {
     const g = new Frame(f.cx + f.fx * shift, f.cz + f.fz * shift, f.fx, f.fz);
-    const r = frameRect(g, -hu, hu, -hv, hv + 10); // with a strip in front for the shopfront
+    const r = frameRect(g, -hu, hu, -hv, hv + 10 + yard); // with a strip in front for the shopfront
     if (claimed.some((o) => o !== own && rectsOverlap(o, r, 4))) continue;
     if (siteBlocked(r)) continue;
     return g;
@@ -67,7 +78,8 @@ export function buildLots(c: Ctx): Rect[] {
   const stats = { houses: 0, apartments: 0, shops: 0, publics: 0, parks: 0 };
 
   for (const lot of lots) {
-    const lr = lotRect(lot.x, lot.y, lot.w, lot.d);
+    const geo = RELOCATED[lot.id] ?? lot;
+    const lr = lotRect(geo.x, geo.y, geo.w, geo.d);
     const maxPieces = lot.kind === 'public' ? 3 : lot.kind === 'home' ? 4 : 1;
     const minW = lot.kind === 'park' ? 60 : lot.kind === 'home' ? 70 : 90;
     const res = freeRects(lr, claimed, { cell: 8, maxPieces, minW, minD: lot.kind === 'park' ? 60 : 60, takenGap: 14 });
@@ -111,19 +123,21 @@ export function buildLots(c: Ctx): Rect[] {
           addCherry(c, p[0], p[2], 1);
         }
       } else if (lot.kind === 'shop') {
-        const hu2 = Math.min(hu - 3, lot.floors >= 5 ? 170 : 260);
-        const hv2 = Math.min(hv - 4, lot.floors === 1 ? 100 : lot.floors >= 5 ? 110 : 125);
+        const feat = FEATURED[lot.id]; // the hand-built shops are smaller than their lot and have a front yard
+        const hu2 = Math.min(hu - 3, feat ? feat.hu : lot.floors >= 5 ? 170 : 260);
+        const hv2 = Math.min(hv - 4, feat ? feat.hv : lot.floors === 1 ? 100 : lot.floors >= 5 ? 110 : 125);
         if (hu2 < 40 || hv2 < 30) {
           c.report.push(`shop ${lot.id} too small after clipping, skipped`);
           return;
         }
-        const fs = pullToStreet(f, hu2, hv2, claimed, piece);
+        const yard = feat?.yard ?? 0;
+        const fs = pullToStreet(f, hu2, hv2, claimed, piece, yard);
         const rect = frameRect(fs, -hu2, hu2, -hv2, hv2);
         claimed.push(rect);
-        pad(c, frameRect(fs, -hu2 - 6, hu2 + 6, -hv2 - 6, hv2 + 8), PAD.shop);
+        pad(c, frameRect(fs, -hu2 - 6, hu2 + 6, -hv2 - 6, hv2 + 8 + yard), PAD.shop);
         c.spots[lot.id] = { x: fs.cx, z: fs.cz, fx: fs.fx, fz: fs.fz, hu: hu2, hv: hv2 };
         if (lot.label === 'ホテル') addHotel(c, lot, rect, fs, hu2, hv2);
-        else addShop(c, lot, rect, fs, hu2, hv2);
+        else if (!feat || !addFeatured(c, lot, rect, fs, hu2, hv2)) addShop(c, lot, rect, fs, hu2, hv2);
         stats.shops++;
       } else if (lot.floors >= 3) {
         // apartment blocks

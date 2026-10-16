@@ -3,6 +3,7 @@ import { ChunkedBatch, MeshBatch } from './batch';
 import type { Ctx, Spot } from './ctx';
 import { LOTS } from './layout';
 import { buildInfill } from './infill';
+import { createGlassMaterial } from './glass';
 import { buildLots } from './lots';
 import { SMALL_SHOPS } from './shops';
 import { OccGrid } from './site';
@@ -56,6 +57,7 @@ export function buildTown(scene: Scene): Town {
     main: new ChunkedBatch(900),
     forest: new ChunkedBatch(1800),
     signs: new ChunkedBatch(900, true),
+    glass: new ChunkedBatch(900, true),
     dec0: new MeshBatch(),
     dec1: new MeshBatch(),
     dec2: new MeshBatch(),
@@ -74,7 +76,7 @@ export function buildTown(scene: Scene): Town {
   let last = 0;
   const budget: string[] = [];
   const mark = (name: string): void => {
-    const now = c.main.vertexCount + c.forest.vertexCount + c.signs.vertexCount;
+    const now = c.main.vertexCount + c.forest.vertexCount + c.signs.vertexCount + c.glass.vertexCount;
     budget.push(`${name} ${now - last}`);
     last = now;
   };
@@ -104,6 +106,7 @@ export function buildTown(scene: Scene): Town {
   const forest = buildForest(c, trail);
   mark('forest');
   c.report.push(`vertices by stage: ${budget.join(', ')}`);
+  c.report.push(`sign atlas: ${c.atlas.usage}`);
   c.report.push(`cherry trees on avenues/plaza: ${avenues}, utility poles: ${poles.poles}, forest trees: ${forest}`);
 
   const mainMat = vertexColourMaterial(scene, 'townMat');
@@ -111,16 +114,23 @@ export function buildTown(scene: Scene): Town {
   const d1 = vertexColourMaterial(scene, 'decal1', -2, -4);
   const d2 = vertexColourMaterial(scene, 'decal2', -3, -6);
   const d3 = vertexColourMaterial(scene, 'decal3', -4, -8);
+  const glassMeshes = c.glass.toMeshes('glass', scene, createGlassMaterial(scene));
+  for (const m of glassMeshes) m.hasVertexAlpha = true; // panes fade from a mirror-like top to a clearer bottom
   const meshes: Mesh[] = [
     ...c.main.toMeshes('town', scene, mainMat),
     ...c.forest.toMeshes('forest', scene, mainMat),
     ...c.signs.toMeshes('signs', scene, c.atlas.material),
+    ...glassMeshes,
     c.dec0.toMesh('decals0', scene, d0),
     c.dec1.toMesh('decals1', scene, d1),
     c.dec2.toMesh('decals2', scene, d2),
     c.dec3.toMesh('decals3', scene, d3),
   ];
   for (const m of meshes) m.parent = root;
+  // panes are not shadow receivers (sun patches on clear glass only show jagged shadow-map edges)
+  const glassRoot = new TransformNode('glass', scene);
+  glassRoot.parent = root;
+  for (const m of glassMeshes) m.parent = glassRoot;
   for (const mat of [mainMat, d0, d1, d2, d3]) mat.freeze();
 
   let verts = terrain.vertexCount;

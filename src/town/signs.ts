@@ -1,4 +1,5 @@
 import { DynamicTexture, StandardMaterial, Texture, Color3, type Scene } from '@babylonjs/core';
+import { EXTRAS, paintTallText, type ExtraCell } from './decor';
 
 export const FONT_STACK = "'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', 'IPAGothic', 'IPAPGothic', sans-serif";
 
@@ -52,16 +53,62 @@ const STYLES: Record<string, SignStyle> = {
 };
 const DEFAULT_STYLE: SignStyle = { bg: '#3b4a5a', fg: '#ffffff', accent: '#aab8c8' };
 
+/**
+ * Text of the vertical hanging sign (袖看板) a shop of this kind may carry. Each entry gets a tall cell `v:<label>`
+ * (painted upright, stored turned by 90 degrees: see `UvRect.rot`).
+ */
+export const VERTICAL: Readonly<Record<string, string>> = {
+  レストラン: '洋食',
+  カフェ: '喫茶',
+  ラーメン: 'ラーメン',
+  居酒屋: '居酒屋',
+  焼肉: '焼肉',
+  パン屋: 'パン',
+  薬局: '薬局',
+  八百屋: '八百屋',
+  理容室: '理容',
+  美容室: '美容室',
+  医院: '内科',
+  歯科: '歯科',
+  学習塾: '学習塾',
+  酒屋: '酒',
+  定食屋: '定食',
+  クリーニング: 'クリーニング',
+  花屋: 'お花',
+  すし: '寿司',
+  ごはん屋: 'ごはん',
+  本屋: '書店',
+};
+
 const CELL_W = 512;
 const CELL_H = 128;
 const COLS = 4;
-const ROWS = 16;
+const ROWS = 32;
 
 export interface UvRect {
   u0: number;
   v0: number;
   u1: number;
   v1: number;
+  /** The picture is stored turned by 90 degrees (vertical signs): use `quadUV` to map it. */
+  rot?: boolean;
+}
+
+/**
+ * Texture coordinates for a quad given bottom-left, bottom-right, top-right, top-left (as the viewer sees it),
+ * honouring turned (vertical) pictures.
+ */
+export function quadUV(r: UvRect): [number, number][] {
+  // stay a texel and a half inside the picture so that mip-mapping does not pull in the neighbouring one
+  const eu = 1.5 / (CELL_W * COLS);
+  const ev = 1.5 / (CELL_H * ROWS);
+  const u0 = r.u0 + eu;
+  const u1 = r.u1 - eu;
+  const v0 = r.v0 + ev;
+  const v1 = r.v1 - ev;
+  return r.rot
+    ? [[u1, v0], [u1, v1], [u0, v1], [u0, v0]]
+    : [[u0, v0], [u1, v0], [u1, v1], [u0, v1]];
 }
 
 /** One texture atlas holding every signboard, so all signs share a single draw call. */
@@ -69,6 +116,9 @@ export class SignAtlas {
   readonly texture: DynamicTexture;
   readonly material: StandardMaterial;
   private cells = new Map<string, UvRect>();
+  private whiteRect: UvRect;
+  /** How much of the atlas is taken, for the build report. */
+  readonly usage: string;
 
   constructor(scene: Scene, labels: readonly string[]) {
     const W = CELL_W * COLS;
@@ -76,20 +126,80 @@ export class SignAtlas {
     this.texture = new DynamicTexture('signAtlas', { width: W, height: H }, scene, true, Texture.TRILINEAR_SAMPLINGMODE);
     this.texture.anisotropicFilteringLevel = 8;
     const ctx = this.texture.getContext() as CanvasRenderingContext2D;
-    const unique = [...new Set(labels)];
-    if (unique.length > COLS * ROWS) throw new Error('too many sign labels for the atlas');
-    unique.forEach((label, n) => {
-      const col = n % COLS;
-      const row = Math.floor(n / COLS);
-      this.drawCell(ctx, col * CELL_W, row * CELL_H, label, STYLES[label] ?? DEFAULT_STYLE);
-      // DynamicTexture flips Y: canvas row 0 is v = 1
-      this.cells.set(label, {
-        u0: (col * CELL_W) / W,
-        u1: ((col + 1) * CELL_W) / W,
-        v1: 1 - (row * CELL_H) / H,
-        v0: 1 - ((row + 1) * CELL_H) / H,
-      });
+    // unused texels are white: plain-coloured quads sample the last cell and take their colour from the vertices only
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, W, H);
+    const extras: ExtraCell[] = [
+      ...EXTRAS,
+      ...Object.entries(VERTICAL).map(([label, text]): ExtraCell => ({
+        key: `v:${label}`,
+        w: 128,
+        h: 512,
+        tall: true,
+        paint: (g, w, h) => paintTallText(g, w, h, text, STYLES[label] ?? DEFAULT_STYLE),
+      })),
+    ];
+    const extraKeys = new Set(extras.map((x) => x.key));
+    const unique = [...new Set(labels)].filter((l) => !extraKeys.has(l));
+    const used: boolean[] = new Array<boolean>(COLS * ROWS).fill(false);
+    used[COLS * ROWS - 1] = true; // the white cell
+    const alloc = (sx: number, sy: number): number => {
+      for (let row = 0; row + sy <= ROWS; row++) {
+        for (let col = 0; col + sx <= COLS; col++) {
+          let free = true;
+          for (let dy = 0; dy < sy && free; dy++) for (let dx = 0; dx < sx; dx++) if (used[(row + dy) * COLS + col + dx]) free = false;
+          if (!free) continue;
+          for (let dy = 0; dy < sy; dy++) for (let dx = 0; dx < sx; dx++) used[(row + dy) * COLS + col + dx] = true;
+          return row * COLS + col;
+        }
+      }
+      throw new Error('too many sign labels for the atlas');
+    };
+    // DynamicTexture flips Y: canvas row 0 is v = 1
+    const rect = (x0: number, y0: number, w: number, h: number, rot = false): UvRect => ({
+      u0: x0 / W,
+      u1: (x0 + w) / W,
+      v1: 1 - y0 / H,
+      v0: 1 - (y0 + h) / H,
+      ...(rot ? { rot: true } : {}),
     });
+    for (const label of unique) {
+      const n = alloc(1, 1);
+      const x0 = (n % COLS) * CELL_W;
+      const y0 = Math.floor(n / COLS) * CELL_H;
+      this.drawCell(ctx, x0, y0, label, STYLES[label] ?? DEFAULT_STYLE);
+      this.cells.set(label, rect(x0, y0, CELL_W, CELL_H));
+    }
+    for (const x of extras) {
+      // a turned picture occupies h x w texels of the atlas
+      const rw = x.tall ? x.h : x.w;
+      const rh = x.tall ? x.w : x.h;
+      const n = alloc(Math.ceil(rw / CELL_W), Math.ceil(rh / CELL_H));
+      const x0 = (n % COLS) * CELL_W;
+      const y0 = Math.floor(n / COLS) * CELL_H;
+      ctx.save();
+      if (x.tall) {
+        const off = document.createElement('canvas');
+        off.width = x.w;
+        off.height = x.h;
+        x.paint(off.getContext('2d')!, x.w, x.h);
+        ctx.translate(x0, y0 + x.w);
+        ctx.rotate(-Math.PI / 2);
+        ctx.drawImage(off, 0, 0);
+      } else {
+        ctx.translate(x0, y0);
+        ctx.beginPath();
+        ctx.rect(0, 0, x.w, x.h);
+        ctx.clip();
+        x.paint(ctx, x.w, x.h);
+      }
+      ctx.restore();
+      this.cells.set(x.key, rect(x0, y0, rw, rh, x.tall));
+    }
+    this.usage = `${used.filter(Boolean).length - 1} of ${COLS * ROWS - 1} cells`;
+    // the white cell is the last one: a degenerate rect at its centre
+    const wc = rect((COLS - 1) * CELL_W + CELL_W / 2, (ROWS - 1) * CELL_H + CELL_H / 2, 0, 0);
+    this.whiteRect = wc;
     this.texture.update(true);
 
     this.material = new StandardMaterial('signMat', scene);
@@ -103,6 +213,15 @@ export class SignAtlas {
     const r = this.cells.get(label);
     if (!r) throw new Error(`no sign for ${label}`);
     return r;
+  }
+
+  has(key: string): boolean {
+    return this.cells.has(key);
+  }
+
+  /** A point inside a white cell: quads mapped here (all four corners) show only their vertex colour. */
+  white(): UvRect {
+    return this.whiteRect;
   }
 
   private drawCell(ctx: CanvasRenderingContext2D, x0: number, y0: number, label: string, s: SignStyle): void {

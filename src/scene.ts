@@ -133,9 +133,20 @@ function applyView(camera: ArcRotateCamera, scene: Scene, town: Town, view: View
       eyeLevel(camera, eye, new Vector3(ex + dx * 120 + dz * 12, eye.y + 3, ez + dz * 120 - dx * 12));
       break;
     }
-    case 'ref5': // cafe terrace on the shop street
-      shopfrontView(camera, town, 'w-cafe');
+    case 'ref5': {
+      // cafe terrace: stand on the sidewalk beyond the west end of the cafe, looking along its front: the cafe and
+      // its deck on the left, the sidewalk leading to the plaza's cherry trees, the street on the right
+      const s = town.spots['w-cafe'];
+      if (!s) break;
+      const rx = s.fz; // local right (facing out of the front)
+      const rz = -s.fx;
+      const at = (u: number, v: number): [number, number] => [s.x + rx * u + s.fx * v, s.z + rz * u + s.fz * v];
+      const [ex, ez] = at(s.hu * 1.67, s.hv + 62);
+      const [tx, tz] = at(-s.hu * 0.6, s.hv + 6);
+      const eye = new Vector3(ex, groundY(ex, ez) + EYE, ez);
+      eyeLevel(camera, eye, new Vector3(tx, eye.y - 2, tz));
       break;
+    }
     case 'summit': {
       const d = town.summitDeck;
       const eye = new Vector3(d.x - 14, d.y + 18, d.z - 10);
