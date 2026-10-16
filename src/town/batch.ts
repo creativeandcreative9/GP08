@@ -37,6 +37,11 @@ export class MeshBatch {
   surf: number[] = [];
   /** Tag given to the vertices emitted from now on. */
   surface: number = SURF.plain;
+  /**
+   * Long axis (1 = x, 2 = y, 3 = z; 0 = unknown) of the piece being emitted: wood grain, for one, runs along it.
+   * Boxes and cylinders set it themselves.
+   */
+  axis = 0;
   private tagged = false;
   constructor(readonly withUV = false) {}
 
@@ -54,8 +59,8 @@ export class MeshBatch {
     this.pos.push(p[0], p[1], p[2]);
     this.nor.push(n[0], n[1], n[2]);
     this.col.push(c[0], c[1], c[2], 1);
-    this.surf.push(this.surface);
-    if (this.surface !== SURF.plain) this.tagged = true;
+    this.surf.push(this.surface + 10 * this.axis);
+    if (this.surface !== SURF.plain || this.axis !== 0) this.tagged = true;
     if (this.withUV) this.uvs.push(u, v);
   }
 
@@ -100,6 +105,9 @@ export class MeshBatch {
   ): void {
     const side = o.sides ?? color;
     const top = o.top ?? color;
+    const prevAxis = this.axis;
+    const dx = x1 - x0, dy = y1 - y0, dz = z1 - z0;
+    this.axis = dy >= dx && dy >= dz ? 2 : dx >= dz ? 1 : 3;
     // +y
     this.quad([x0, y1, z0], [x0, y1, z1], [x1, y1, z1], [x1, y1, z0], top, UP);
     if (o.bottom) this.quad([x0, y0, z0], [x1, y0, z0], [x1, y0, z1], [x0, y0, z1], side, [0, -1, 0]);
@@ -107,6 +115,7 @@ export class MeshBatch {
     this.quad([x0, y0, z0], [x0, y1, z0], [x1, y1, z0], [x1, y0, z0], side, [0, 0, -1]);
     this.quad([x1, y0, z0], [x1, y1, z0], [x1, y1, z1], [x1, y0, z1], side, [1, 0, 0]);
     this.quad([x0, y0, z0], [x0, y0, z1], [x0, y1, z1], [x0, y1, z0], side, [-1, 0, 0]);
+    this.axis = prevAxis;
   }
 
   /** Gable roof. Ridge runs along `ridge` axis ('x' or 'z'). Footprint is the wall rectangle. */
@@ -141,6 +150,8 @@ export class MeshBatch {
 
   /** Vertical (optionally tapered) prism with `sides` sides; y0..y1. */
   cylinder(cx: number, cz: number, y0: number, y1: number, r0: number, r1: number, sides: number, color: RGB, cap = true): void {
+    const prevAxis = this.axis;
+    this.axis = 2;
     for (let i = 0; i < sides; i++) {
       const a0 = (i / sides) * Math.PI * 2;
       const a1 = ((i + 1) / sides) * Math.PI * 2;
@@ -154,6 +165,7 @@ export class MeshBatch {
       );
       if (cap && r1 > 0) this.tri([cx, y1, cz], [cx + c0 * r1, y1, cz + s0 * r1], [cx + c1 * r1, y1, cz + s1 * r1], color, UP);
     }
+    this.axis = prevAxis;
   }
 
   /** Flat horizontal polygon (disc) at height y. */
