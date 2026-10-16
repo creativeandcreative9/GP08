@@ -232,7 +232,7 @@ class Builder {
     if (roadClearance(x, z, o.road).d < (o.roadMargin ?? 17)) return false;
     if (o.ownMargin !== undefined && roadClearance(x, z).d < o.ownMargin) return false;
     if (insideAny(x, z, this.c.obstacles, o.wall ?? r + 1)) return false;
-    if (o.tall && this.corridor.some((q) => Math.hypot(q.x - x, q.z - z) < 14 + r)) return false;
+    if (this.corridor.some((q) => Math.hypot(q.x - x, q.z - z) < (o.tall ? 14 : 9) + r)) return false; // keep the comparison shots clear
     return !this.taken.hit(x, z, r);
   }
 

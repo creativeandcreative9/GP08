@@ -2,6 +2,7 @@ import {
   CascadedShadowGenerator,
   Color3,
   Color4,
+  ColorCurves,
   DefaultRenderingPipeline,
   ImageProcessingConfiguration,
   SSAO2RenderingPipeline,
@@ -83,6 +84,19 @@ export function setupRendering(
     ao.expensiveBlur = true;
     ao.bilateralSamples = 12;
   }
+
+  // colour grading: cool violet-blue in the shade, warm gold in the light, shadows lifted a little (never black)
+  const cc = new ColorCurves();
+  cc.shadowsHue = 252;
+  cc.shadowsDensity = 38;
+  cc.shadowsSaturation = 12;
+  cc.shadowsExposure = 8;
+  cc.highlightsHue = 42;
+  cc.highlightsDensity = 28;
+  cc.highlightsSaturation = 6;
+  cc.globalSaturation = 6;
+  ip.colorCurves = cc;
+  ip.colorCurvesEnabled = true;
 
   const pipe = new DefaultRenderingPipeline('post', true, scene, [camera]);
   pipe.samples = 4;
