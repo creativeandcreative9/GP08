@@ -14,7 +14,7 @@ import { createSky, HORIZON } from './sky';
 import { applySurfaceDetail } from './surface';
 import { SPAWN } from './town/layout';
 import { buildTown, type Town } from './town/build';
-import { roadClearance, roadsW } from './town/site';
+import { EYE, evalPoses } from './town/evalcams';
 
 export interface GameScene {
   scene: Scene;
@@ -26,35 +26,10 @@ export interface GameScene {
 const VIEWS = ['overview', 'street', 'summit', 'platform', 'alley', 'ref1', 'ref2', 'ref3', 'ref4', 'ref5'] as const;
 type View = (typeof VIEWS)[number] | 'default';
 
-/** Eye height of a standing person (≈1.5 m) for the eye-level comparison shots. */
-const EYE = 19;
-
 function eyeLevel(camera: ArcRotateCamera, eye: Vector3, target: Vector3): void {
   camera.upperBetaLimit = Math.PI / 2 + 0.3;
   camera.setTarget(target);
   camera.setPosition(eye);
-}
-
-/**
- * Eye-level shot on the sidewalk in front of a named shop, looking along its frontage with the shop on the left
- * (the composition of the reference shop-street images). `look` overrides the point looked at.
- */
-function shopfrontView(camera: ArcRotateCamera, town: Town, id: string, look?: (eye: Vector3) => Vector3): boolean {
-  const s = town.spots[id];
-  if (!s) return false;
-  const rx = s.fz; // local right (facing out of the front)
-  const rz = -s.fx;
-  const fcx = s.x + s.fx * s.hv;
-  const fcz = s.z + s.fz * s.hv;
-  const d = roadClearance(fcx, fcz).d; // front of the shop to the road edge
-  const v = s.hv + Math.min(Math.max(d * 0.5, 12), 24); // stay on the shop side of the street trees
-  const ex = s.x + s.fx * v + rx * s.hu * 0.8;
-  const ez = s.z + s.fz * v + rz * s.hu * 0.8;
-  const eye = new Vector3(ex, town.heightAt(ex, ez) + EYE, ez);
-  const tx = s.x + s.fx * (s.hv + 4) - rx * s.hu * 1.5;
-  const tz = s.z + s.fz * (s.hv + 4) - rz * s.hu * 1.5;
-  eyeLevel(camera, eye, look ? look(eye) : new Vector3(tx, eye.y - 1.5, tz));
-  return true;
 }
 
 function applyView(camera: ArcRotateCamera, scene: Scene, town: Town, view: View): void {
@@ -95,59 +70,16 @@ function applyView(camera: ArcRotateCamera, scene: Scene, town: Town, view: View
       break;
     }
     // ---- comparison shots matching the reference images (see docs/20261016_visual_eval.md) ----
-    case 'ref1': // shop street: the sidewalk in front of the Japanese sweets shop
-      shopfrontView(camera, town, 'e-wagashi');
-      break;
-    case 'ref2': {
-      // convenience store at the corner, the plaza cherries and the station behind
-      const s = town.spots['w-conbini'];
-      if (!s) break;
-      // stand at the end of the frontage farther from the station, looking towards the station front
-      const rx = s.fz;
-      const rz = -s.fx;
-      const far = Math.hypot(s.x + rx * s.hu, s.z + rz * s.hu - 600) > Math.hypot(s.x - rx * s.hu, s.z - rz * s.hu - 600) ? 1 : -1;
-      const v = s.hv + 26;
-      const ex = s.x + s.fx * v + rx * s.hu * 0.95 * far;
-      const ez = s.z + s.fz * v + rz * s.hu * 0.95 * far;
-      const eye = new Vector3(ex, groundY(ex, ez) + EYE, ez);
-      eyeLevel(camera, eye, new Vector3(30, eye.y + 4, 600));
-      break;
-    }
-    case 'ref3': {
-      // inside the station concourse, looking along the line of ticket gates towards the staffed booth
-      const eye = new Vector3(-100, groundY(-100, 634) + EYE, 634);
-      camera.fov = 1.05;
-      eyeLevel(camera, eye, new Vector3(36, eye.y + 4, 677));
-      break;
-    }
-    case 'ref4': {
-      // cherry avenue: the sidewalk of the street from the plaza to the mountain, looking towards the mountain
-      const r = roadsW.find((w) => w.id === 'mountain-street');
-      if (!r) break;
-      const p0 = r.pts[0]!;
-      const p1 = r.pts[r.pts.length - 1]!;
-      const l = Math.hypot(p1.x - p0.x, p1.z - p0.z);
-      const dx = (p1.x - p0.x) / l;
-      const dz = (p1.z - p0.z) / l;
-      const off = r.width / 2 + 8;
-      const ex = p0.x + dx * 420 - dz * off;
-      const ez = p0.z + dz * 420 + dx * off;
-      const eye = new Vector3(ex, groundY(ex, ez) + EYE, ez);
-      eyeLevel(camera, eye, new Vector3(ex + dx * 120 + dz * 12, eye.y + 3, ez + dz * 120 - dx * 12));
-      break;
-    }
+    case 'ref1':
+    case 'ref2':
+    case 'ref3':
+    case 'ref4':
     case 'ref5': {
-      // cafe terrace: stand on the sidewalk beyond the west end of the cafe, looking along its front: the cafe and
-      // its deck on the left, the sidewalk leading to the plaza's cherry trees, the street on the right
-      const s = town.spots['w-cafe'];
-      if (!s) break;
-      const rx = s.fz; // local right (facing out of the front)
-      const rz = -s.fx;
-      const at = (u: number, v: number): [number, number] => [s.x + rx * u + s.fx * v, s.z + rz * u + s.fz * v];
-      const [ex, ez] = at(s.hu * 1.67, s.hv + 62);
-      const [tx, tz] = at(-s.hu * 0.6, s.hv + 6);
-      const eye = new Vector3(ex, groundY(ex, ez) + EYE, ez);
-      eyeLevel(camera, eye, new Vector3(tx, eye.y - 2, tz));
+      const pose = evalPoses(town.spots)[view];
+      if (!pose) break;
+      const eye = new Vector3(pose.x, groundY(pose.x, pose.z) + EYE, pose.z);
+      if (view === 'ref3') camera.fov = 1.05;
+      eyeLevel(camera, eye, new Vector3(pose.tx, eye.y + pose.dy, pose.tz));
       break;
     }
     case 'summit': {

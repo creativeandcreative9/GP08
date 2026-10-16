@@ -1,5 +1,6 @@
 import type { Ctx } from './ctx';
 import { DEC1_Y } from './ctx';
+import { evalPoses } from './evalcams';
 import {
   BIKE_COLS, VEND_D, VEND_W, bench, bicycle, bollard, curveMirror, footprints, guardPipe, planter, postBox,
   pottedPlant, roadSign, streetLamp, utilityBox, vendingMachine, wasteBin,
@@ -145,44 +146,7 @@ interface View {
  * corridor along each line of sight (see `Builder.roomFor`).
  */
 function evalViews(c: Ctx): View[] {
-  const views: View[] = [{ x: -36, z: 560, tx: 6, tz: 640 }];
-  const shop = (id: string): void => {
-    const s = c.spots[id];
-    if (!s) return;
-    const rx = s.fz;
-    const rz = -s.fx;
-    const d = roadClearance(s.x + s.fx * s.hv, s.z + s.fz * s.hv).d;
-    const v = s.hv + Math.min(Math.max(d * 0.5, 12), 24);
-    views.push({
-      x: s.x + s.fx * v + rx * s.hu * 0.8,
-      z: s.z + s.fz * v + rz * s.hu * 0.8,
-      tx: s.x + s.fx * (s.hv + 4) - rx * s.hu * 1.5,
-      tz: s.z + s.fz * (s.hv + 4) - rz * s.hu * 1.5,
-    });
-  };
-  shop('e-wagashi');
-  shop('w-cafe');
-  const k = c.spots['w-conbini'];
-  if (k) {
-    const rx = k.fz;
-    const rz = -k.fx;
-    const far = Math.hypot(k.x + rx * k.hu, k.z + rz * k.hu - 600) > Math.hypot(k.x - rx * k.hu, k.z - rz * k.hu - 600) ? 1 : -1;
-    const v = k.hv + 26;
-    views.push({ x: k.x + k.fx * v + rx * k.hu * 0.95 * far, z: k.z + k.fz * v + rz * k.hu * 0.95 * far, tx: 30, tz: 600 });
-  }
-  const ms = roadsW.find((r) => r.id === 'mountain-street');
-  if (ms) {
-    const p0 = ms.pts[0]!;
-    const p1 = ms.pts[ms.pts.length - 1]!;
-    const l = Math.hypot(p1.x - p0.x, p1.z - p0.z);
-    const dx = (p1.x - p0.x) / l;
-    const dz = (p1.z - p0.z) / l;
-    const off = ms.width / 2 + 8;
-    const ex = p0.x + dx * 420 - dz * off;
-    const ez = p0.z + dz * 420 + dx * off;
-    views.push({ x: ex, z: ez, tx: ex + dx * 120 + dz * 12, tz: ez + dz * 120 - dx * 12 });
-  }
-  return views;
+  return Object.values(evalPoses(c.spots)).map((p) => ({ x: p.x, z: p.z, tx: p.tx, tz: p.tz }));
 }
 
 /** Frame at ground height with its front along (fx, fz). */
@@ -226,7 +190,7 @@ class Builder {
     for (const v of evalViews(c)) {
       this.taken.add(v.x, v.z, 17);
       const l = Math.hypot(v.tx - v.x, v.tz - v.z) || 1;
-      for (let t = 24; t <= 170; t += 12) this.corridor.push({ x: v.x + ((v.tx - v.x) / l) * t, z: v.z + ((v.tz - v.z) / l) * t });
+      for (let t = 12; t <= 170; t += 12) this.corridor.push({ x: v.x + ((v.tx - v.x) / l) * t, z: v.z + ((v.tz - v.z) / l) * t });
     }
     this.hot = [{ x: plazaW.x, z: plazaW.z }, ...Object.values(c.spots).map((s) => ({ x: s.x, z: s.z }))];
   }
@@ -318,7 +282,7 @@ function vendingRun(B: Builder, a: Anchor, n: number, bins: number): number {
   const u0 = -L / 2;
   for (let i = 0; i < n; i++) {
     const p = fr0.p(u0 + (i + 0.5) * step, 0, 0);
-    if (!B.roomFor(p[0], p[2], 7, a.opts)) return 0;
+    if (!B.roomFor(p[0], p[2], 7, { ...a.opts, tall: true })) return 0; // big and solid: keep out of the comparison shots
   }
   B.pad(fr0, u0 - 1.5, u0 + L + 1.5, -VEND_D / 2 - 1.5, VEND_D / 2 + 2.5);
   const variant0 = Math.floor(B.rnd() * 8);
