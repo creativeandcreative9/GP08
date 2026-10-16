@@ -77,16 +77,18 @@ export function buildAvenues(c: Ctx): number {
     avenueTrees.push({ x, z });
     n++;
   };
+  // The trees are big (a crown is 12-15 m wide): one every ~12 m on each side, the two sides staggered, so that
+  // the crowns meet over the street without being piled on top of each other.
   const ms = roadsW.find((r) => r.id === 'mountain-street')!;
   const smp = samplePolyline(ms.pts, 10);
-  for (let d = 150; d < smp[smp.length - 1]!.s - 80; d += 118) {
+  const STEP = 76;
+  for (let d = 150, i = 0; d < smp[smp.length - 1]!.s - 80; d += STEP, i++) {
     const q = smp.reduce((best, s) => (Math.abs(s.s - d) < Math.abs(best.s - d) ? s : best), smp[0]!);
-    for (const side of [-1, 1]) {
-      const x = q.x + q.nx * side * (ms.width / 2 + 22);
-      const z = q.z + q.nz * side * (ms.width / 2 + 22);
-      if (blockedForProp(c, x, z, ms.id, 8)) continue;
-      place(x, z, 1.0 + c.rnd() * 0.2);
-    }
+    const side = i % 2 ? 1 : -1;
+    const x = q.x + q.nx * side * (ms.width / 2 + 22);
+    const z = q.z + q.nz * side * (ms.width / 2 + 22);
+    if (blockedForProp(c, x, z, ms.id, 8)) continue;
+    place(x, z, 0.98 + c.rnd() * 0.17);
   }
   const cr = roadsW.find((r) => r.id === 'coast-road')!;
   const cs = samplePolyline(cr.pts, 10);
@@ -97,25 +99,26 @@ export function buildAvenues(c: Ctx): number {
     const z = q.z + q.nz * (cr.width / 2 + 22);
     if (coastS(x, z) > -(BEACH_WIDTH + 10)) continue;
     if (blockedForProp(c, x, z, cr.id, 8)) continue;
-    place(x, z, 1.05);
+    place(x, z, 1.02);
   }
   // plaza ring
   const lx = plazaW.rx * 0.84;
   const lz = plazaW.rz * 0.8;
-  for (let i = 0; i < 34; i++) {
-    const a = (i / 34) * Math.PI * 2 + 0.05;
+  const RING = 26;
+  for (let i = 0; i < RING; i++) {
+    const a = (i / RING) * Math.PI * 2 + 0.05;
     const x = Math.cos(a) * lx * 0.93;
     const z = Math.sin(a) * lz * 0.93;
     if (Math.abs(x) < 58 || Math.abs(z) < 48) continue;
-    place(x, z, 1.15 + c.rnd() * 0.25);
+    place(x, z, 1.02 + c.rnd() * 0.2);
   }
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 11; i++) {
     const a = c.rnd() * Math.PI * 2;
     const r = 0.25 + c.rnd() * 0.5;
     const x = Math.cos(a) * lx * r;
     const z = Math.sin(a) * lz * r;
     if (Math.abs(x) < 60 || Math.abs(z) < 50 || Math.hypot(x, z) < 130) continue;
-    place(x, z, 1.1 + c.rnd() * 0.3);
+    place(x, z, 1.0 + c.rnd() * 0.22);
   }
   return n;
 }

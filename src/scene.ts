@@ -8,6 +8,7 @@ import {
   Scene,
   Vector3,
 } from '@babylonjs/core';
+import { createFallingPetals } from './petals';
 import { LIGHT, setupRendering, type Rendering } from './render';
 import { createSky, HORIZON } from './sky';
 import { applySurfaceDetail } from './surface';
@@ -186,6 +187,7 @@ export function createScene(engine: Engine, canvas: HTMLCanvasElement): GameScen
   sun.specular = new Color3(0.3, 0.3, 0.28);
 
   createSky(scene);
+  createFallingPetals(scene);
   const town = buildTown(scene);
   for (const line of town.report) console.info(`[town] ${line}`);
 
