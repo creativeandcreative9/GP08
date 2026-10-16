@@ -13,6 +13,7 @@ import { LIGHT, setupRendering, type Rendering } from './render';
 import { createSky, HORIZON } from './sky';
 import { applySurfaceDetail } from './surface';
 import { SPAWN } from './town/layout';
+import { createLife } from './life';
 import { buildTown, type Town } from './town/build';
 import { EYE, evalPoses } from './town/evalcams';
 
@@ -143,6 +144,7 @@ export function createScene(engine: Engine, canvas: HTMLCanvasElement): GameScen
   applySurfaceDetail(scene);
 
   scene.metadata = { ...(scene.metadata ?? {}), town };
+  createLife(scene, town, rendering);
   const q = new URLSearchParams(location.search).get('view');
   const view: View = (VIEWS as readonly string[]).includes(q ?? '') ? (q as View) : 'default';
   applyView(camera, scene, town, view);
