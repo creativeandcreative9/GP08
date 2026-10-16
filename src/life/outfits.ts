@@ -186,6 +186,17 @@ export const STAFF: Record<string, Outfit> = {
     apron: hex(0x3a2c24),
     shoes: hex(0x3a2a20),
   },
+  conbini: {
+    id: 'conbini_clerk',
+    build: 'man',
+    skin: S1,
+    hair: { style: 'short', color: DB },
+    hat: { kind: 'peaked', color: hex(0x1a9a52), band: hex(0xf6f6f2) },
+    top: { color: hex(0x1a9a52), length: 'short', sleeves: 'short', collar: hex(0xf6f6f2), trim: hex(0x1676c6) },
+    bottom: { kind: 'trousers', color: hex(0x2c3446) },
+    apron: hex(0x1676c6),
+    shoes: hex(0xf0f0ee),
+  },
   station: {
     id: 'station_staff',
     build: 'man',

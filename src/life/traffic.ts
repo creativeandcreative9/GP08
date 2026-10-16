@@ -21,6 +21,8 @@ export interface Car {
   /** wheel rotation (radians) */
   spin: number;
   parked: boolean;
+  /** taken out of the scene (it stood right in front of the camera) */
+  hidden: boolean;
   /** index inside the (kind, palette) instance set, assigned by the caller */
   slot: number;
   /** index among all cars of the same kind (for the wheel instances) */
@@ -139,6 +141,7 @@ export class Traffic {
       speed: 0,
       spin: 0,
       parked,
+      hidden: false,
       slot: 0,
       wslot: 0,
       route: null,
@@ -266,8 +269,14 @@ export class Traffic {
 
   update(dt: number): void {
     for (const r of this.routes) {
-      for (const c of r.cars) this.step(r, c, dt);
+      for (const c of r.cars) if (!c.hidden) this.step(r, c, dt);
     }
+  }
+
+  /** Takes a car out of the scene for good (parked cars just stay where they are, driving ones leave their route) */
+  remove(c: Car): void {
+    c.hidden = true;
+    if (c.route) c.route.cars = c.route.cars.filter((o) => o !== c);
   }
 
   private step(r: Route, c: Car, dt: number): void {

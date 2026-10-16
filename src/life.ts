@@ -1,124 +1,27 @@
-import { Color3, MeshBuilder, StandardMaterial, Vector3, type ArcRotateCamera, type Scene } from '@babylonjs/core';
+import type { Scene } from '@babylonjs/core';
 import type { Rendering } from './render';
 import type { Town } from './town/build';
 import { MeshBatch } from './town/batch';
-import { roadsW } from './town/site';
+import { insideAny, roadsW } from './town/site';
 import { buildWheel, CAR_KINDS } from './life/carmodels';
-import { Instances, lifeMaterial, setPart, setPose } from './life/inst';
-import { Crowd, type Person } from './life/crowd';
+import { Crowd, type CrowdEnv, type Person } from './life/crowd';
+import { buildDog } from './life/animals';
+import { carGallery, peopleGallery } from './life/gallery';
+import { hideInstance, Instances, lifeMaterial, setPart, setPose } from './life/inst';
 import { OUTFITS, STAFF } from './life/outfits';
-import type { Outfit } from './life/people';
+import { buildFused } from './life/people';
 import { FusedSet, PersonSet, SeatedSet } from './life/personset';
+import { Prober } from './life/probe';
 import { Traffic, type Car } from './life/traffic';
-
-const GALLERY_Y = 900;
-
-function galleryGround(scene: Scene): void {
-  const ground = MeshBuilder.CreateGround('lifeGalleryGround', { width: 900, height: 900 }, scene);
-  ground.position.set(0, GALLERY_Y - 0.2, 0);
-  const gm = new StandardMaterial('lifeGalleryMat', scene);
-  gm.diffuseColor = new Color3(0.55, 0.57, 0.6);
-  gm.specularColor = Color3.Black();
-  ground.material = gm;
-  ground.receiveShadows = true;
-}
-
-function galleryCamera(scene: Scene, target: Vector3, alpha: number, beta: number, radius: number): void {
-  scene.onBeforeRenderObservable.addOnce(() => {
-    const cam = scene.activeCamera as ArcRotateCamera;
-    cam.upperBetaLimit = Math.PI;
-    cam.lowerRadiusLimit = 1;
-    cam.setTarget(target);
-    cam.alpha = alpha;
-    cam.beta = beta;
-    cam.radius = radius;
-  });
-}
-
-/**
- * Debug: `?lifeshow=cars&galrow=N&galview=V` shows car type N high above the town against the sky.
- * View 0 = three-quarter front, 1 = three-quarter rear, 2 = side, 3 = front, 4 = rear.
- */
-function carGallery(scene: Scene, rendering: Rendering, rowInView: number, view: number): void {
-  const mat = lifeMaterial(scene);
-  const Y = GALLERY_Y;
-  galleryGround(scene);
-  const kind = CAR_KINDS[rowInView % CAR_KINDS.length]!;
-  const wb = new MeshBatch();
-  buildWheel(wb, kind.wheelR, kind.wheelW);
-  const wheels = new Instances(`gal_wheel_${kind.id}`, wb, mat, scene, kind.palettes.length * 4);
-  rendering.addShadowCaster(wheels.mesh);
-  let verts = wheels.vertexCount;
-  kind.palettes.forEach((pal, i) => {
-    const b = new MeshBatch();
-    kind.build(b, pal);
-    const inst = new Instances(`gal_car_${kind.id}_${i}`, b, mat, scene, 1);
-    verts += inst.vertexCount;
-    rendering.addShadowCaster(inst.mesh);
-    const x = i === 0 ? 0 : i * 60 - 60;
-    const z = i === 0 ? 0 : 55;
-    setPose(inst.data, 0, x, Y, z, 0);
-    inst.upload();
-    let w = i * 4;
-    for (const sx of [-1, 1]) {
-      for (const az of [kind.axle.front, kind.axle.rear]) {
-        setPart(wheels.data, w * 16, x, Y, z, 0, 1, sx * kind.wheelX, kind.wheelR, az, 0);
-        w++;
-      }
-    }
-  });
-  wheels.upload();
-  console.info(`[life] gallery ${kind.id}: ${verts} vertices (${kind.palettes.length} colourways + wheel)`);
-  // the camera orbits the car: alpha = pi/2 puts it in front (+z), -pi/2 behind, 0 on the car's right side
-  const views: [number, number, number][] = [
-    [Math.PI / 2 - 0.7, Math.PI / 2 - 0.2, 100],
-    [-Math.PI / 2 - 0.7, Math.PI / 2 - 0.2, 100],
-    [0, Math.PI / 2 - 0.1, 110],
-    [Math.PI / 2, Math.PI / 2 - 0.1, 100],
-    [-Math.PI / 2, Math.PI / 2 - 0.1, 100],
-  ];
-  const v = views[view % views.length]!;
-  galleryCamera(scene, new Vector3(0, Y + 8, 0), v[0], v[1], v[2]);
-}
-
-/** Debug: `?lifeshow=people&galview=V` shows the whole cast in two rows (walking pose) with a car for scale. */
-function peopleGallery(scene: Scene, rendering: Rendering, view: number, phaseArg: number): void {
-  const mat = lifeMaterial(scene);
-  const Y = GALLERY_Y;
-  galleryGround(scene);
-  const all = [...OUTFITS, ...Object.values(STAFF)];
-  let verts = 0;
-  const perRow = 7;
-  all.forEach((o, i) => {
-    const set = new PersonSet(scene, mat, rendering, o, 1);
-    const row = Math.floor(i / perRow);
-    const col = i % perRow;
-    const x = (col - (perRow - 1) / 2) * 15;
-    const z = -row * 16;
-    set.write(0, x, Y, z, 0, 1, phaseArg, phaseArg === 0 ? 0 : 1);
-    set.upload();
-    verts += set.vertexCount;
-  });
-  // a seated person on a 6.5-high seat
-  const seat = new SeatedSet(scene, mat, rendering, OUTFITS[8]!, 6.5, 1);
-  seat.write(0, 60, Y + 6.5, 10, -0.5);
-  seat.upload();
-  verts += seat.body.vertexCount;
-  console.info(`[life] gallery people: ${all.length} outfits, ${verts} vertices`);
-  const views: [number, number, number, number][] = [
-    [Math.PI / 2 - 0.35, Math.PI / 2 - 0.12, 120, 0], // front, three-quarter
-    [-Math.PI / 2 - 0.35, Math.PI / 2 - 0.12, 120, 0], // rear
-    [Math.PI / 2, Math.PI / 2 - 0.05, 80, 0],
-    [0, Math.PI / 2 - 0.05, 120, 0],
-  ];
-  const v = views[view % views.length]!;
-  galleryCamera(scene, new Vector3(0, Y + 11, -8), v[0], v[1], v[2]);
-}
 
 /** Height of the asphalt above the terrain (the road decal layer) */
 const ROAD_Y = 0.45;
 
+/** The jogger is the last of the walking outfits */
 const JOGGER = OUTFITS.length - 1;
+
+/** A dog's stride cycles per person stride cycle */
+const DOG_STRIDE = 2.6;
 
 interface CarSet {
   body: Instances;
@@ -128,6 +31,7 @@ interface CarSet {
 /**
  * Cars and people for the town: parked and driving cars, walkers, shop staff and people sitting on benches.
  * Everything is drawn with a few template meshes and thin instances; the simulation runs before every frame.
+ * `?life=off` leaves them out (to compare), `?lifeshow=cars|people` shows the models up close (see gallery.ts).
  */
 export function createLife(scene: Scene, town: Town, rendering: Rendering): void {
   const q = new URLSearchParams(location.search);
@@ -194,57 +98,89 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
     const body = carSets.get(`${c.kind}:${c.pal}`)!.body;
     const y = height(c.x, c.z) + ROAD_Y;
     setPose(body.data, c.slot * 16, c.x, y, c.z, c.yaw);
-    let w = c.wslot * 4;
-    for (const sx of [-1, 1]) {
-      for (const az of [kind.axle.front, kind.axle.rear]) {
-        setPart(wheels.data, w * 16, c.x, y, c.z, c.yaw, 1, sx * kind.wheelX, kind.wheelR, az, c.spin);
-        w++;
-      }
-    }
+    // the four wheels (no temporary arrays: this runs for every moving car on every frame)
+    const o = c.wslot * 64;
+    const wd = wheels.data;
+    const wx = kind.wheelX;
+    const wr = kind.wheelR;
+    setPart(wd, o, c.x, y, c.z, c.yaw, 1, -wx, wr, kind.axle.front, c.spin);
+    setPart(wd, o + 16, c.x, y, c.z, c.yaw, 1, -wx, wr, kind.axle.rear, c.spin);
+    setPart(wd, o + 32, c.x, y, c.z, c.yaw, 1, wx, wr, kind.axle.front, c.spin);
+    setPart(wd, o + 48, c.x, y, c.z, c.yaw, 1, wx, wr, kind.axle.rear, c.spin);
+  };
+  const hideCar = (c: Car): void => {
+    hideInstance(carSets.get(`${c.kind}:${c.pal}`)!.body.data, c.slot * 16);
+    for (let w = 0; w < 4; w++) hideInstance(wheels.data, (c.wslot * 4 + w) * 16);
   };
   for (const c of traffic.cars) writeCar(c);
   for (const s of carSets.values()) s.body.upload();
   wheels.upload();
 
   // ---------------------------------------------------------------------------------------------- people
+  // the cast: the walking outfits, then the staff (one fused mesh each), then the dog
   const staffFirst = OUTFITS.length;
-  const cast: Outfit[] = [...OUTFITS, STAFF.wagashi!, STAFF.cafe!, STAFF.station!];
+  const staff = [STAFF.wagashi!, STAFF.cafe!, STAFF.station!, STAFF.conbini!];
+  const dogIndex = staffFirst + staff.length;
+  const castSize = dogIndex + 1;
   const idx = (id: string): number => OUTFITS.findIndex((o) => o.id === id);
-  const walkOutfits = OUTFITS.map((_, i) => i).filter((i) => i !== JOGGER);
-  const staff = { wagashi: staffFirst, cafe: staffFirst + 1, station: staffFirst + 2 };
-  const sitOutfits = {
-    plaza: ['elder_man', 'casual_woman_pink', 'schoolgirl_blazer'].map(idx),
-    platform: ['office_man_gray', 'office_woman'].map(idx),
+  const prober = new Prober(scene);
+  const env: CrowdEnv = {
+    ground: height,
+    stand: (x, z) => prober.stand(x, z, height(x, z)),
+    seat: (x, z, top) => prober.seat(x, z, height(x, z), top),
+    solid: (x, z, m) => insideAny(x, z, town.obstacles, m),
   };
-  const crowd = new Crowd(town.spots, walkOutfits, staff, sitOutfits, JOGGER);
+  const crowd = new Crowd(
+    town.spots,
+    {
+      walkers: OUTFITS.map((_, i) => i).filter((i) => i !== JOGGER),
+      jogger: JOGGER,
+      wagashi: staffFirst,
+      cafe: staffFirst + 1,
+      station: staffFirst + 2,
+      conbini: staffFirst + 3,
+      dog: dogIndex,
+      dogOwners: ['elder_woman', 'casual_man_teal', 'casual_woman_pink'].map(idx),
+      sitters: { low: ['casual_woman_pink', 'office_woman', 'schoolgirl_blazer'].map(idx), high: ['elder_man', 'office_man_gray'].map(idx) },
+    },
+    env,
+  );
 
-  const standCount: number[] = cast.map(() => 0);
+  const standCount: number[] = Array.from({ length: castSize }, () => 0);
   const seatCount = new Map<string, number>();
   for (const p of crowd.people) {
     if (p.mode === 'sit') {
-      const key = `${p.outfit}:${p.surface}`;
+      const key = `${p.outfit}:${p.seatH}`;
       p.slot = seatCount.get(key) ?? 0;
       seatCount.set(key, p.slot + 1);
     } else p.slot = standCount[p.outfit]!++;
   }
   const personSets: (PersonSet | undefined)[] = [];
   const fusedSets: (FusedSet | undefined)[] = [];
-  cast.forEach((o, i) => {
+  for (let i = 0; i < castSize; i++) {
     const n = standCount[i]!;
-    if (n === 0) return;
-    if (i >= staffFirst) fusedSets[i] = new FusedSet(scene, mat, rendering, o, n);
-    else personSets[i] = new PersonSet(scene, mat, rendering, o, n);
-  });
+    if (n === 0) continue;
+    if (i < staffFirst) personSets[i] = new PersonSet(scene, mat, rendering, OUTFITS[i]!, n);
+    else if (i === dogIndex) fusedSets[i] = new FusedSet(scene, mat, rendering, 'dog', buildDog(), n);
+    else fusedSets[i] = new FusedSet(scene, mat, rendering, staff[i - staffFirst]!.id, buildFused(staff[i - staffFirst]!), n);
+  }
   const seatedSets = new Map<string, SeatedSet>();
   for (const [key, n] of seatCount) {
     const [o, h] = key.split(':').map(Number) as [number, number];
-    seatedSets.set(key, new SeatedSet(scene, mat, rendering, cast[o]!, h, n));
+    seatedSets.set(key, new SeatedSet(scene, mat, rendering, OUTFITS[o]!, h, n));
   }
   const writePerson = (p: Person): void => {
     const y = height(p.x, p.z) + p.surface;
-    if (p.mode === 'sit') seatedSets.get(`${p.outfit}:${p.surface}`)!.write(p.slot, p.x, y, p.z, p.yaw, p.k);
+    if (p.mode === 'sit') seatedSets.get(`${p.outfit}:${p.seatH}`)!.write(p.slot, p.x, y, p.z, p.yaw, p.k);
+    else if (p.animal) fusedSets[p.outfit]!.gait(p.slot, p.x, y, p.z, p.yaw, p.k, p.phase * DOG_STRIDE, p.swing);
     else if (p.outfit >= staffFirst) fusedSets[p.outfit]!.write(p.slot, p.x, y, p.z, p.yaw, p.k);
     else personSets[p.outfit]!.write(p.slot, p.x, y, p.z, p.yaw, p.k, p.phase, p.mode === 'walk' ? p.swing : 0);
+  };
+  const hidePerson = (p: Person): void => {
+    p.hidden = true;
+    if (p.mode === 'sit') seatedSets.get(`${p.outfit}:${p.seatH}`)!.hide(p.slot);
+    else if (p.outfit >= staffFirst) fusedSets[p.outfit]!.hide(p.slot);
+    else personSets[p.outfit]!.hide(p.slot);
   };
   for (const p of crowd.people) writePerson(p);
   for (const s of personSets) s?.upload();
@@ -260,13 +196,63 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
   scene.onBeforeRenderObservable.add(() => {
     const dt = Math.min(0.1, engine.getDeltaTime() / 1000);
     traffic.update(dt);
-    for (const c of driving) writeCar(c);
+    for (const c of driving) if (!c.hidden) writeCar(c);
     for (const s of movingSets) s.body.upload();
     wheels.upload();
     crowd.update(dt);
-    for (const p of mobile) writePerson(p);
+    for (const p of mobile) if (!p.hidden) writePerson(p);
     for (const s of personSets) s?.upload();
     for (const s of fusedSets) s?.upload();
+  });
+
+  // Whatever stands right in front of the lens only hides the picture: on the first frame (the camera has been put in
+  // place by then) people and parked cars next to the eye or in the middle of the view are taken away.
+  scene.onBeforeRenderObservable.addOnce(() => {
+    const cam = scene.activeCamera;
+    if (!cam) return;
+    const ex = cam.globalPosition.x;
+    const ez = cam.globalPosition.z;
+    const fwd = cam.getForwardRay(1).direction;
+    const fl = Math.hypot(fwd.x, fwd.z) || 1;
+    const fx = fwd.x / fl;
+    const fz = fwd.z / fl;
+    const inView = (x: number, z: number, dist: number, cone: number): boolean => {
+      const dx = x - ex;
+      const dz = z - ez;
+      const d = Math.hypot(dx, dz);
+      if (d < dist * 0.32) return true;
+      return d < dist && (dx * fx + dz * fz) / (d || 1) > Math.cos(cone);
+    };
+    let removed = 0;
+    for (const p of crowd.people) {
+      if (p.hidden) continue;
+      const near = p.staff ? Math.hypot(p.x - ex, p.z - ez) < 10 : inView(p.x, p.z, 44, 0.42);
+      if (near) {
+        hidePerson(p);
+        removed++;
+      }
+    }
+    // whoever follows a person who was taken away (a friend, a dog) goes too: it would walk on the spot
+    for (const p of crowd.people) {
+      if (p.buddy?.hidden && !p.hidden) {
+        hidePerson(p);
+        removed++;
+      }
+    }
+    for (const c of traffic.cars) {
+      if (c.hidden) continue;
+      if (inView(c.x, c.z, c.parked ? 52 : 40, 0.3)) {
+        traffic.remove(c);
+        hideCar(c);
+        removed++;
+      }
+    }
+    for (const s of personSets) s?.upload();
+    for (const s of fusedSets) s?.upload();
+    for (const s of seatedSets.values()) s.upload();
+    for (const s of carSets.values()) s.body.upload();
+    wheels.upload();
+    if (removed > 0) console.info(`[life] cleared ${removed} people / cars from the camera's way`);
   });
 
   // ---------------------------------------------------------------------------------------------- report and test hooks
@@ -276,11 +262,14 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
   for (const s of personSets) if (s) (verts += s.vertexCount), (meshes += s.meshes().length);
   for (const s of fusedSets) if (s) (verts += s.body.vertexCount), meshes++;
   for (const s of seatedSets.values()) (verts += s.body.vertexCount), meshes++;
-  const walkers = crowd.people.filter((p) => p.mode === 'walk').length;
-  const standing = crowd.people.filter((p) => p.mode === 'stand').length;
-  const sitting = crowd.people.filter((p) => p.mode === 'sit').length;
+  const humans = crowd.people.filter((p) => !p.animal);
+  const dogs = crowd.people.length - humans.length;
+  const walkers = humans.filter((p) => p.mode === 'walk').length;
+  const standing = humans.filter((p) => p.mode === 'stand').length;
+  const sitting = humans.filter((p) => p.mode === 'sit').length;
+  const staffPosts = humans.filter((p) => p.staff).map((p) => ({ outfit: p.outfit, x: p.x, z: p.z }));
   console.info(
-    `[town] life: ${driving.length} driving + ${traffic.cars.length - driving.length} parked cars, ${crowd.people.length} people (${walkers} walking, ${standing} standing, ${sitting} sitting), ${meshes} meshes, ${verts} template vertices, built in ${Math.round(performance.now() - t0)} ms`,
+    `[town] life: ${driving.length} driving + ${traffic.cars.length - driving.length} parked cars, ${humans.length} people (${walkers} walking, ${standing} standing, ${sitting} sitting, ${staffPosts.length} staff) and ${dogs} dogs, ${meshes} meshes, ${verts} template vertices, built in ${Math.round(performance.now() - t0)} ms`,
   );
   scene.metadata = {
     ...(scene.metadata ?? {}),
@@ -288,16 +277,22 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
       cars: traffic.cars.length,
       driving: driving.length,
       parked: traffic.cars.length - driving.length,
-      people: crowd.people.length,
+      people: humans.length,
+      dogs,
       walkers,
       standing,
       sitting,
+      /** where the shop and station staff stand (outfit index, x, z) */
+      staff: staffPosts,
       meshes,
       vertices: verts,
+      /** outfit, mode and x,z of everyone who stands or sits (for tests and debugging) */
+      posts: (): { outfit: number; mode: string; x: number; z: number; hidden: boolean }[] =>
+        humans.filter((p) => p.mode !== 'walk').map((p) => ({ outfit: p.outfit, mode: p.mode, x: p.x, z: p.z, hidden: p.hidden })),
       /** x,z of every driving car and walking person (for tests) */
       positions: (): { cars: [number, number][]; walkers: [number, number][] } => ({
-        cars: driving.map((c) => [c.x, c.z]),
-        walkers: mobile.filter((p) => p.mode === 'walk').map((p) => [p.x, p.z]),
+        cars: driving.filter((c) => !c.hidden).map((c) => [c.x, c.z]),
+        walkers: mobile.filter((p) => p.mode === 'walk' && !p.hidden).map((p) => [p.x, p.z]),
       }),
     },
   };

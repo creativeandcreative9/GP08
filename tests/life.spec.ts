@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { Crowd } from '../src/life/crowd';
+import { Crowd, FLAT_ENV } from '../src/life/crowd';
 import { Path, newPathPt, polylineWindow } from '../src/life/path';
 import { Traffic, zoneSpeed, type Car } from '../src/life/traffic';
 import { CAR_KINDS } from '../src/life/carmodels';
@@ -130,13 +130,13 @@ test('traffic: cars drive on the left lane, stay on the road, never overlap, and
       const d = Math.hypot(c.x - px, c.z - pz);
       if (d < best) {
         best = d;
-        // heading x offset: cross product of heading and the offset to the car (positive = the car is on the right of the road line seen along its heading)
+        // cross product of the heading and the offset from the road centre to the car: positive = the car is on the left of its heading
         const hx = Math.sin(c.yaw);
         const hz = Math.cos(c.yaw);
         side = hx * (c.z - pz) - hz * (c.x - px);
       }
     }
-    if (c.turning === 0) expect(side, 'a car drives on the left of the road centre').toBeLessThan(0.0001);
+    if (c.turning === 0) expect(side, 'a car drives on the left lane (the road centre is on its right)').toBeGreaterThan(0.0001);
   }
 });
 
@@ -158,18 +158,30 @@ test('crowd: about a hundred people, walkers keep to the sidewalks and move, sta
     'e-wagashi': { x: 697, z: -1020, fx: 0, fz: -1, hu: 50, hv: 30 },
     'w-cafe': { x: -984, z: -700, fx: 1, fz: 0, hu: 40, hv: 35 },
   };
-  const walkOutfits = Array.from({ length: 13 }, (_, i) => i);
-  const crowd = new Crowd(spots, walkOutfits, { wagashi: 14, cafe: 15, station: 16 }, { plaza: [0, 1], platform: [2] }, 13);
-  const people = crowd.people;
+  const walkers13 = Array.from({ length: 13 }, (_, i) => i);
+  const crowd = new Crowd(spots, { walkers: walkers13, jogger: 13, wagashi: 14, cafe: 15, station: 16, conbini: 17, dog: 18, dogOwners: [0, 1, 2], sitters: { low: [0, 1], high: [2] } });
+  const dogs = crowd.people.filter((p) => p.animal);
+  expect(dogs.length).toBeGreaterThanOrEqual(2); // dogs on a lead
+  for (const d of dogs) expect(d.buddy, 'a dog walks with an owner').not.toBeNull();
+  const people = crowd.people.filter((p) => !p.animal);
   expect(people.length).toBeGreaterThan(40);
   expect(people.filter((p) => p.mode === 'walk').length).toBeGreaterThan(20);
   expect(people.filter((p) => p.mode === 'stand').length).toBeGreaterThan(5);
-  expect(people.filter((p) => p.mode === 'sit').length).toBeGreaterThanOrEqual(0);
-  expect(people.some((p) => p.outfit === 14)).toBe(true); // the shop clerk
+  expect(people.filter((p) => p.mode === 'sit').length).toBeGreaterThan(0);
+  expect(people.some((p) => p.outfit === 14 && p.staff)).toBe(true); // the shop clerk
+  expect(people.some((p) => p.outfit === 15 && p.staff)).toBe(true); // the cafe staff
+  expect(people.some((p) => p.outfit === 16 && p.staff)).toBe(true); // station staff
+  // sitters use one of the two seat variants
+  for (const p of people.filter((p) => p.mode === 'sit')) expect([6.2, 7.2]).toContain(p.seatH);
 
   const walkers = people.filter((p) => p.mode === 'walk');
   const start = walkers.map((p) => [p.x, p.z]);
-  for (let step = 0; step < 1200; step++) crowd.update(0.1);
+  let maxDogGap = 0;
+  for (let step = 0; step < 1200; step++) {
+    crowd.update(0.1);
+    for (const d of dogs) maxDogGap = Math.max(maxDogGap, Math.hypot(d.x - d.buddy!.x, d.z - d.buddy!.z));
+  }
+  expect(maxDogGap, 'a dog stays close to its owner').toBeLessThan(12);
   const moved = walkers.filter((p, i) => Math.hypot(p.x - start[i]![0], p.z - start[i]![1]) > 30).length;
   expect(moved).toBeGreaterThan(walkers.length * 0.6);
   for (const p of walkers) {
@@ -180,6 +192,22 @@ test('crowd: about a hundred people, walkers keep to the sidewalks and move, sta
   }
 });
 
+test('crowd: staff inside the shops are placed only where a raised interior floor really is', () => {
+  const spots = {
+    'w-conbini': { x: -509, z: -911, fx: 1, fz: 0, hu: 60, hv: 35 },
+    'e-wagashi': { x: 697, z: -1020, fx: 0, fz: -1, hu: 50, hv: 30 },
+    'w-cafe': { x: -984, z: -700, fx: 1, fz: 0, hu: 40, hv: 35 },
+  };
+  const cast = { walkers: Array.from({ length: 13 }, (_, i) => i), jogger: 13, wagashi: 14, cafe: 15, station: 16, conbini: 17, dog: 18, dogOwners: [0, 1, 2], sitters: { low: [0, 1], high: [2] } };
+  const plain = new Crowd(spots, cast, FLAT_ENV);
+  expect(plain.people.some((p) => p.outfit === 17), 'nobody is put inside a wall where there is no room').toBe(false);
+  expect(plain.people.filter((p) => p.outfit === 15 && p.staff).length).toBe(1); // only the waitress outside
+  const rooms = new Crowd(spots, cast, { ...FLAT_ENV, stand: () => 4 });
+  expect(rooms.people.some((p) => p.outfit === 17 && p.staff), 'the convenience store clerk').toBe(true);
+  expect(rooms.people.filter((p) => p.outfit === 15 && p.staff).length, 'the waitress and the barista').toBe(2);
+  expect(rooms.people.some((p) => p.outfit === 14 && p.staff), 'the wagashi clerk').toBe(true);
+});
+
 // ---- in the page ---------------------------------------------------------------------------------------------
 
 interface LifeInfo {
@@ -187,9 +215,11 @@ interface LifeInfo {
   driving: number;
   parked: number;
   people: number;
+  dogs: number;
   walkers: number;
   standing: number;
   sitting: number;
+  staff: { outfit: number; x: number; z: number }[];
   meshes: number;
   vertices: number;
   positions: () => { cars: [number, number][]; walkers: [number, number][] };
@@ -218,6 +248,8 @@ test('the town has cars and people, they move every frame, and the page logs no 
   expect(a.info.parked).toBeGreaterThanOrEqual(20);
   expect(a.info.people).toBeGreaterThanOrEqual(60);
   expect(a.info.people).toBeLessThanOrEqual(120);
+  expect(a.info.dogs).toBeGreaterThanOrEqual(1);
+  expect(a.info.staff.length, 'shop clerks and station staff at their posts').toBeGreaterThanOrEqual(2);
   expect(a.info.vertices).toBeLessThan(60_000);
 
   // wait for rendered frames (software rendering can be slow)

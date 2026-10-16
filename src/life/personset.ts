@@ -1,7 +1,8 @@
 import type { Scene, StandardMaterial } from '@babylonjs/core';
 import type { Rendering } from '../render';
-import { buildFused, buildPerson, buildSeated, type Outfit, type PersonParts } from './people';
-import { Instances, setPart, setPose } from './inst';
+import type { MeshBatch } from '../town/batch';
+import { buildPerson, buildSeated, type Outfit, type PersonParts } from './people';
+import { hideInstance, Instances, setPart, setPose } from './inst';
 
 /** Swing of the legs and arms at full stride (radians) */
 const LEG_AMP = 0.52;
@@ -79,17 +80,29 @@ export class PersonSet {
     }
   }
 
+  /** Takes person `slot` out of the scene */
+  hide(slot: number): void {
+    hideInstance(this.body.data, slot * 16);
+    for (const k of [slot * 2, slot * 2 + 1]) hideInstance(this.legs.data, k * 16);
+    if (this.hold) {
+      hideInstance(this.arms.data, slot * 16);
+      hideInstance(this.hold.data, slot * 16);
+    } else {
+      for (const k of [slot * 2, slot * 2 + 1]) hideInstance(this.arms.data, k * 16);
+    }
+  }
+
   upload(): void {
     for (const m of this.meshes()) m.upload();
   }
 }
 
-/** One seated person (a single static mesh per outfit, one or more instances). */
+/** One seated person (a single static mesh per outfit and seat height, one or more instances). */
 export class SeatedSet {
   readonly body: Instances;
 
   constructor(scene: Scene, mat: StandardMaterial, rendering: Rendering, readonly outfit: Outfit, seatH: number, capacity: number) {
-    this.body = new Instances(`life_s_${outfit.id}`, buildSeated(outfit, seatH), mat, scene, capacity);
+    this.body = new Instances(`life_s_${outfit.id}_${seatH}`, buildSeated(outfit, seatH), mat, scene, capacity);
     rendering.addShadowCaster(this.body.mesh);
   }
 
@@ -97,22 +110,39 @@ export class SeatedSet {
     setPose(this.body.data, slot * 16, x, seatY, z, yaw, k);
   }
 
+  hide(slot: number): void {
+    hideInstance(this.body.data, slot * 16);
+  }
+
   upload(): void {
     this.body.upload();
   }
 }
 
-/** A standing person that never walks (staff): the whole body is one mesh. */
+/**
+ * A figure drawn as one static mesh: shop and station staff (who stand at their post) and animals. `gait` bobs a
+ * walking animal along with its stride.
+ */
 export class FusedSet {
   readonly body: Instances;
 
-  constructor(scene: Scene, mat: StandardMaterial, rendering: Rendering, readonly outfit: Outfit, capacity: number) {
-    this.body = new Instances(`life_f_${outfit.id}`, buildFused(outfit), mat, scene, capacity);
+  constructor(scene: Scene, mat: StandardMaterial, rendering: Rendering, id: string, batch: MeshBatch, capacity: number) {
+    this.body = new Instances(`life_f_${id}`, batch, mat, scene, capacity);
     rendering.addShadowCaster(this.body.mesh);
   }
 
   write(slot: number, x: number, y: number, z: number, yaw: number, k = 1): void {
     setPose(this.body.data, slot * 16, x, y, z, yaw, k);
+  }
+
+  /** A trotting animal: bobs and pitches twice per stride cycle (`phase`); `swing` 0 = standing still */
+  gait(slot: number, x: number, y: number, z: number, yaw: number, k: number, phase: number, swing: number): void {
+    const s = Math.sin(phase);
+    setPart(this.body.data, slot * 16, x, y + Math.abs(s) * 0.45 * swing * k, z, yaw, k, 0, 0, 0, Math.cos(phase) * 0.05 * swing);
+  }
+
+  hide(slot: number): void {
+    hideInstance(this.body.data, slot * 16);
   }
 
   upload(): void {
