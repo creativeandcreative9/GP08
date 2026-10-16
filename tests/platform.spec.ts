@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { heightAt } from '../src/town/heights';
 import { PLATFORM, platformObstacles } from '../src/town/platform';
+import { GATES, stationObstacles } from '../src/town/stationplan';
 import { SPAWN } from '../src/town/layout';
 
 // Pure-function checks (no browser): the station platforms are walkable, continuous and solid.
@@ -108,6 +109,101 @@ test('random walks around the station never step more than 1.5 units', () => {
     const a = rnd() * Math.PI * 2;
     const r = walk(sx, sz, sx + Math.cos(a) * 300, sz + Math.sin(a) * 300);
     maxJump = Math.max(maxJump, r.maxJump);
+  }
+  expect(maxJump).toBeLessThanOrEqual(1.5);
+});
+
+// --- the station concourse ---------------------------------------------------------------------------------------
+// The building stands on the platform: its floor is at platform height, the plaza side is reached by a short ramp in
+// front of the doors, the gate line separates the concourse from the platform side, and every wall is solid.
+const hall = [...platformObstacles(), ...stationObstacles()];
+const hallBlocked = (x: number, z: number): boolean =>
+  hall.some((o) => x > o.minX - RADIUS && x < o.maxX + RADIUS && z > o.minZ - RADIUS && z < o.maxZ + RADIUS);
+
+function walkHall(sx: number, sz: number, tx: number, tz: number, step = 1): { maxJump: number; x: number; z: number; h: number } {
+  let x = sx;
+  let z = sz;
+  let h = heightAt(x, z);
+  let maxJump = 0;
+  const n = Math.ceil(Math.hypot(tx - sx, tz - sz) / step);
+  for (let i = 0; i < n; i++) {
+    const nx = x + (tx - sx) / n;
+    const nz = z + (tz - sz) / n;
+    if (!hallBlocked(nx, nz)) {
+      x = nx;
+      z = nz;
+    } else if (!hallBlocked(nx, z)) x = nx;
+    else if (!hallBlocked(x, nz)) z = nz;
+    const nh = heightAt(x, z);
+    maxJump = Math.max(maxJump, Math.abs(nh - h));
+    h = nh;
+  }
+  return { maxJump, x, z, h };
+}
+
+test('the concourse floor is at platform height and the entrance ramp rises smoothly to it', () => {
+  for (const [x, z] of [[0, 640], [-100, 700], [100, 625], [180, 650], [0, 619]] as [number, number][]) {
+    expect(heightAt(x, z), `floor at ${x},${z}`).toBe(PLATFORM.h);
+  }
+  expect(heightAt(0, PLATFORM.entrance.z0 - 1)).toBe(0);
+  let prev = 0;
+  let maxJump = 0;
+  for (let z = PLATFORM.entrance.z0 - 10; z <= PLATFORM.hall.z0 + 10; z += 0.5) {
+    const h = heightAt(10, z);
+    maxJump = Math.max(maxJump, Math.abs(h - prev));
+    prev = h;
+  }
+  expect(maxJump).toBeLessThanOrEqual(0.5);
+  expect(prev).toBe(PLATFORM.h);
+});
+
+test('the player can walk from the plaza through the entrance doors to the gate line', () => {
+  const r = walkHall(0, 540, 0, 660);
+  expect(r.maxJump).toBeLessThanOrEqual(1.5);
+  expect(r.h).toBe(PLATFORM.h);
+  expect(r.z).toBeGreaterThan(655);
+});
+
+test('every gate lane and the wide lane can be walked through to the platform side', () => {
+  for (const x of [...GATES.laneX, (GATES.wide.x0 + GATES.wide.x1) / 2]) {
+    const r = walkHall(x, 650, x, 700);
+    expect(r.maxJump, `lane ${x}`).toBeLessThanOrEqual(1.5);
+    expect(r.z, `lane ${x}`).toBeGreaterThan(695);
+  }
+});
+
+test('from the gates the player reaches the platform through the doorways in the back wall', () => {
+  for (const x of [-60, 0]) {
+    const r = walkHall(x, 650, x, 760);
+    expect(r.maxJump, `x ${x}`).toBeLessThanOrEqual(1.5);
+    expect(r.z, `x ${x}`).toBeGreaterThan(740);
+    expect(r.h).toBe(PLATFORM.h);
+  }
+});
+
+test('walls, gate machines, booth and fences are solid', () => {
+  // the front wall beside the doors and the solid wings
+  expect(walkHall(60, 570, 60, 660).z).toBeLessThan(618);
+  expect(walkHall(150, 740, 150, 640).z).toBeGreaterThan(710);
+  expect(walkHall(-150, 740, -150, 640).z).toBeGreaterThan(710);
+  // the gate machines and the fences close the line except for the lanes
+  expect(walkHall(-10, 650, -10, 700).z).toBeLessThan(672);
+  expect(walkHall(90, 650, 90, 700).z).toBeLessThan(680);
+  expect(walkHall(-95, 650, -95, 700).z).toBeLessThan(680);
+  expect(walkHall(60, 650, 60, 700).z).toBeLessThan(672);
+  // no height step anywhere while bumping around inside
+  let seed = 4242;
+  const rnd = (): number => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  let maxJump = 0;
+  for (let k = 0; k < 300; k++) {
+    const sx = -190 + rnd() * 380;
+    const sz = 560 + rnd() * 200;
+    if (hallBlocked(sx, sz)) continue;
+    const a = rnd() * Math.PI * 2;
+    maxJump = Math.max(maxJump, walkHall(sx, sz, sx + Math.cos(a) * 200, sz + Math.sin(a) * 200).maxJump);
   }
   expect(maxJump).toBeLessThanOrEqual(1.5);
 });

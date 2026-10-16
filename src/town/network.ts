@@ -1,8 +1,10 @@
 import { MeshBatch, beam } from './batch';
 import { DEC0_Y, DEC1_Y, DEC2_Y, DEC3_Y, type Ctx } from './ctx';
-import { Frame } from './frame';
 import { plazaW, railW, RAIL_HALF, roadClearance, roadsW, stationRect, type Pt } from './site';
 import { PLATFORM, platformObstacles } from './platform';
+import { buildNamePoles, buildPlatformSlabs, buildStationBuilding } from './station';
+import { buildTrain } from './train';
+import { stationObstacles } from './stationplan';
 import { heightAt } from './terrain';
 import { hex, type RGB, type V3 } from './util';
 
@@ -246,9 +248,6 @@ export function buildRailway(c: Ctx): void {
   }
 }
 
-const STATION_ROOF = hex(0x2f6fb5);
-const STATION_WALL = hex(0xf3ecde);
-
 export function buildStation(c: Ctx): void {
   const trackZ = 804;
   const x0 = -560;
@@ -256,8 +255,7 @@ export function buildStation(c: Ctx): void {
   const h = 6;
   const b = c.main.at(0, trackZ);
   // platforms
-  b.box(x0, x1, 0, h, 628, 780, CONCRETE, { top: hex(0xe3e0d8) });
-  b.box(x0, x1, 0, h, 828, 980, CONCRETE, { top: hex(0xe3e0d8) });
+  buildPlatformSlabs(c, b, CONCRETE);
   // ramps: the west ends of both platforms and a ramp from the plaza onto the south platform
   const conc = hex(0xd9d6ce);
   const up: V3 = [0, 1, 0];
@@ -281,51 +279,18 @@ export function buildStation(c: Ctx): void {
   b.box(x0, x1, h, h + 0.35, 770, 774, YELLOW);
   b.box(x0, x1, h, h + 0.35, 834, 838, YELLOW);
 
-  // station building (south platform, entrance facing the plaza = south)
-  const f = new Frame(0, 664, 0, -1); // front faces -z
-  const hu = 190;
-  const hv = 38;
-  f.box(b, -hu, hu, h, h + 46, -hv, hv, STATION_WALL, { sides: STATION_WALL });
-  f.box(b, -hu, hu, h, h + 4, -hv - 1, hv + 1, hex(0xb9b4a8)); // plinth
-  f.gable(b, -hu, hu, -hv, hv, h + 46, 24, 'u', 14, STATION_ROOF, STATION_WALL);
-  // entrance canopy
-  f.box(b, -70, 70, h + 34, h + 38, hv, hv + 34, hex(0x2f6fb5));
-  for (const u of [-64, 64]) f.box(b, u - 2, u + 2, h, h + 34, hv + 28, hv + 32, hex(0x9a9ca8));
-  // glass front with doors
-  const glass = hex(0x8fc4e8);
-  f.facade(b, -150, -80, h + 8, h + 30, hv + 0.6, 1, glass);
-  f.facade(b, 80, 150, h + 8, h + 30, hv + 0.6, 1, glass);
-  f.facade(b, -40, 40, h + 2, h + 30, hv + 0.6, 1, hex(0x6fa8d8));
-  f.facade(b, -2, 2, h + 2, h + 30, hv + 0.8, 1, hex(0x3a4a5c));
-  for (let k = -3; k <= 3; k++) {
-    if (Math.abs(k) < 1) continue;
-    f.facade(b, k * 60 - 18, k * 60 + 18, h + 34, h + 42, hv + 0.6, 1, glass);
-  }
-  // sign on the front wall above the canopy
-  const uv = c.atlas.uv('駅');
-  const sb = c.signs.at(0, 700);
-  const sw = 92;
-  const sh = 23;
-  const y0 = h + 47;
-  const v = hv + 1.0;
-  sb.quad(f.pt(sw, y0, v), f.pt(-sw, y0, v), f.pt(-sw, y0 + sh, v), f.pt(sw, y0 + sh, v), [1, 1, 1], f.dir(0, 0, 1), [
-    [uv.u0, uv.v0], [uv.u1, uv.v0], [uv.u1, uv.v1], [uv.u0, uv.v1],
-  ]);
-  // same sign at the back (facing the tracks)
-  const vb = -hv - 1.0;
-  sb.quad(f.pt(-sw, y0, vb), f.pt(sw, y0, vb), f.pt(sw, y0 + sh, vb), f.pt(-sw, y0 + sh, vb), [1, 1, 1], f.dir(0, 0, -1), [
-    [uv.u0, uv.v0], [uv.u1, uv.v0], [uv.u1, uv.v1], [uv.u0, uv.v1],
-  ]);
-  c.obstacles.push({ minX: -hu, maxX: hu, minZ: 664 - hv, maxZ: 664 + hv });
+  // station building (south platform, entrance facing the plaza = south): see station.ts
+  buildStationBuilding(c, b);
+  c.obstacles.push(...stationObstacles());
 
   // platform canopies (long slab roofs on posts)
   const canopy = (zc: number, depth: number, xa: number, xb: number): void => {
-    b.box(xa, xb, h + 44, h + 48, zc - depth / 2, zc + depth / 2, hex(0xe9eef3), { top: hex(0x6d8fb8) });
+    b.box(xa, xb, h + 44, h + 48, zc - depth / 2, zc + depth / 2, hex(0xe9eef3), { top: hex(0x6d8fb8), bottom: true });
     for (let x = xa + 20; x <= xb - 10; x += 100) {
       b.cylinder(x, zc + depth / 2 - 6, h, h + 44, 1.6, 1.6, 6, hex(0x7d8088));
     }
   };
-  canopy(740, 70, -330, 330);
+  canopy(744, 64, -330, 330);
   canopy(900, 110, -330, 330);
   // benches
   for (const x of [-300, -120, 140, 360, 500]) {
@@ -336,22 +301,9 @@ export function buildStation(c: Ctx): void {
     b.box(x - 12, x + 12, h + 4, h + 6, 905, 912, hex(0x7b5a3c));
     b.box(x - 12, x + 12, h + 6, h + 14, 911, 913, hex(0x7b5a3c));
   }
-  // platform end ramps (visual) and a tall station name pole
-  b.cylinder(-440, 790, h, h + 40, 1.2, 1.2, 6, hex(0x555a62));
-  b.box(-462, -418, h + 40, h + 52, 788, 792, hex(0x1a56a8));
-  const u2 = c.atlas.uv('駅');
-  const sg = c.signs.at(-440, 790);
-  for (const zz of [785.9, 794.1]) {
-    const dirn: 1 | -1 = zz < 790 ? -1 : 1;
-    sg.quad(
-      dirn > 0 ? [-462, h + 41, zz] : [-418, h + 41, zz],
-      dirn > 0 ? [-418, h + 41, zz] : [-462, h + 41, zz],
-      dirn > 0 ? [-418, h + 51, zz] : [-462, h + 51, zz],
-      dirn > 0 ? [-462, h + 51, zz] : [-418, h + 51, zz],
-      [1, 1, 1], [0, 0, dirn],
-      [[u2.u0, u2.v0], [u2.u1, u2.v0], [u2.u1, u2.v1], [u2.u0, u2.v1]],
-    );
-  }
+  // station name poles on both platforms, and the train standing at the platform
+  buildNamePoles(c, b);
+  buildTrain(b);
 
   // footbridge over the tracks
   const bx = 430;

@@ -112,9 +112,10 @@ function applyView(camera: ArcRotateCamera, scene: Scene, town: Town, view: View
       break;
     }
     case 'ref3': {
-      // the station entrance (the ticket gates will be inside)
-      const eye = new Vector3(-36, groundY(-36, 560) + EYE, 560);
-      eyeLevel(camera, eye, new Vector3(6, eye.y + 2, 640));
+      // inside the station concourse, looking along the line of ticket gates towards the staffed booth
+      const eye = new Vector3(-100, groundY(-100, 634) + EYE, 634);
+      camera.fov = 1.05;
+      eyeLevel(camera, eye, new Vector3(36, eye.y + 4, 677));
       break;
     }
     case 'ref4': {

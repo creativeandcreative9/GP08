@@ -7,6 +7,7 @@ import { buildLots } from './lots';
 import { SMALL_SHOPS } from './shops';
 import { OccGrid } from './site';
 import { buildPlaza, buildRailway, buildRoads, buildStation, buildCrossings } from './network';
+import { finishStation } from './station';
 import { buildAvenues, buildForest, buildPoles, buildTrail } from './props';
 import { SignAtlas } from './signs';
 import { buildSummit } from './summit';
@@ -119,6 +120,7 @@ export function buildTown(scene: Scene): Town {
     c.dec1.toMesh('decals1', scene, d1),
     c.dec2.toMesh('decals2', scene, d2),
     c.dec3.toMesh('decals3', scene, d3),
+    ...finishStation(c),
   ];
   for (const m of meshes) m.parent = root;
   for (const mat of [mainMat, d0, d1, d2, d3]) mat.freeze();
