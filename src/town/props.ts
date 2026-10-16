@@ -1,16 +1,16 @@
-import { beam } from './batch';
 import { DEC0_Y, type Ctx } from './ctx';
+import { addPole, wirePoles, type Pole } from './poles';
 import { insideAny, plazaW, railDistance, roadClearance, roadsW, stationRect } from './site';
 import { samplePolyline } from './network';
 import { BEACH_WIDTH, SUMMIT_XZ, coastS, heightAt, mountainHeight, mountainT } from './terrain';
 import { addCherry, addForestTree } from './trees';
 import { hex, makeRng, V3 } from './util';
 
-const POLE = hex(0xb4b6bb);
-const POLE_DARK = hex(0x6b6e76);
-const WIRE = hex(0x2c2d33);
+/** Utility pole and avenue tree positions of the last build (street furniture keeps clear of them). */
+export const poleList: { x: number; z: number; ox: number; oz: number; advert: number }[] = [];
+export const avenueTrees: { x: number; z: number }[] = [];
 
-function blockedForProp(c: Ctx, x: number, z: number, roadSkip: string | undefined, roadMargin: number): boolean {
+export function blockedForProp(c: Ctx, x: number, z: number, roadSkip: string | undefined, roadMargin: number): boolean {
   if (coastS(x, z) > -(BEACH_WIDTH - 5)) return true;
   if (roadClearance(x, z, roadSkip).d < roadMargin) return true;
   if (railDistance(x, z) < 40) return true;
@@ -22,73 +22,48 @@ function blockedForProp(c: Ctx, x: number, z: number, roadSkip: string | undefin
   return insideAny(x, z, c.obstacles, 10);
 }
 
-interface PolePos {
-  x: number;
-  z: number;
-  nx: number;
-  nz: number;
+function makePole(c: Ctx, x: number, z: number, nx: number, nz: number, side: 1 | -1): Pole {
+  const r = c.rnd;
+  return {
+    x, z, y0: heightAt(x, z), H: 127 + r() * 7, nx, nz, side,
+    district: (x < 0 ? 0 : 1) + (z > -900 ? 0 : 2),
+    xfmr: r() < 0.3, lamp: r() < 0.3, box: r() < 0.35,
+    advert: r() < 0.14 ? Math.floor(r() * 4) : -1,
+  };
 }
 
-/** Utility poles every ~250 units along the main roads, with crossbars and sagging wires. */
+/**
+ * Utility poles every ~250 units along the main roads (concrete shaft, yellow/black sleeve, cross-arms, address
+ * plate...), joined by sagging wires and a cable bundle. See `poles.ts` for the model.
+ */
 export function buildPoles(c: Ctx): { poles: number } {
   const ids = ['coast-road', 'west-road', 'mountain-street', 'main-street', 'ne-street', 'east-road', 'univ-north-road', 'east-lane', 'south-lane', 'tower-lane'];
   let count = 0;
+  poleList.length = 0;
   roadsW.forEach((road, ri) => {
     if (!ids.includes(road.id)) return;
     const smp = samplePolyline(road.pts, 10);
     const total = smp[smp.length - 1]!.s;
-    const placed: PolePos[] = [];
-    const side0 = ri % 2 ? 1 : -1;
+    const placed: Pole[] = [];
+    const sides: (1 | -1)[] = ri % 2 ? [1, -1] : [-1, 1];
     for (let d = 90 + ri * 37; d < total - 60; d += 250) {
       const q = smp.reduce((best, s) => (Math.abs(s.s - d) < Math.abs(best.s - d) ? s : best), smp[0]!);
-      for (const side of [side0, -side0]) {
+      for (const side of sides) {
         const off = road.width / 2 + 10;
         const x = q.x + q.nx * side * off;
         const z = q.z + q.nz * side * off;
         if (blockedForProp(c, x, z, road.id, 16)) continue;
-        // keep the same side along a run where possible
-        placed.push({ x, z, nx: q.nx, nz: q.nz });
+        placed.push(makePole(c, x, z, q.nx, q.nz, side));
         break;
       }
     }
-    const H = 128;
     for (const p of placed) {
-      const y0 = heightAt(p.x, p.z);
-      const b = c.main.at(p.x, p.z);
-      b.cylinder(p.x, p.z, y0, y0 + H, 2.6, 1.6, 6, POLE);
-      const dx = p.nx * 20;
-      const dz = p.nz * 20;
-      beam(b, [p.x - dx, y0 + 116, p.z - dz], [p.x + dx, y0 + 116, p.z + dz], 2, 3, POLE_DARK);
-      beam(b, [p.x - dx * 0.7, y0 + 103, p.z - dz * 0.7], [p.x + dx * 0.7, y0 + 103, p.z + dz * 0.7], 1.8, 2.5, POLE_DARK);
-      for (const s of [-1, 1]) b.cylinder(p.x + dx * s * 0.92, p.z + dz * s * 0.92, y0 + 116, y0 + 122, 1.5, 1.2, 5, hex(0xe4e6ea), true);
-      b.cylinder(p.x, p.z, y0 + 120, y0 + 124, 1.5, 1.2, 5, hex(0xe4e6ea), true);
-      if ((Math.round(p.x + p.z) & 3) === 0) {
-        b.cylinder(p.x + p.nx * 5, p.z + p.nz * 5, y0 + 84, y0 + 98, 5, 5, 8, hex(0x9a9ca4));
-      }
+      addPole(c, p);
+      poleList.push({ x: p.x, z: p.z, ox: p.nx * p.side, oz: p.nz * p.side, advert: p.advert });
       count++;
     }
     // wires between consecutive poles
-    for (let i = 0; i + 1 < placed.length; i++) {
-      const a = placed[i]!;
-      const b2 = placed[i + 1]!;
-      const L = Math.hypot(a.x - b2.x, a.z - b2.z);
-      if (L > 420) continue;
-      const ya = heightAt(a.x, a.z);
-      const yb = heightAt(b2.x, b2.z);
-      const attach: [number, number][] = [[-20, 116], [20, 116], [0, 123], [0, 103]];
-      for (const [o, hh] of attach) {
-        const pts: V3[] = [];
-        const nseg = 4;
-        for (let k = 0; k <= nseg; k++) {
-          const t = k / nseg;
-          const x = a.x + a.nx * o + (b2.x + b2.nx * o - a.x - a.nx * o) * t;
-          const z = a.z + a.nz * o + (b2.z + b2.nz * o - a.z - a.nz * o) * t;
-          const y = ya + hh + (yb - ya) * t - L * 0.035 * 4 * t * (1 - t);
-          pts.push([x, y, z]);
-        }
-        c.main.at(a.x, a.z).wire(pts, 0.9, WIRE);
-      }
-    }
+    for (let i = 0; i + 1 < placed.length; i++) wirePoles(c, placed[i]!, placed[i + 1]!);
   });
   return { poles: count };
 }
@@ -96,8 +71,10 @@ export function buildPoles(c: Ctx): { poles: number } {
 /** Cherry trees along the mountain street, the coast road and around the plaza. */
 export function buildAvenues(c: Ctx): number {
   let n = 0;
+  avenueTrees.length = 0;
   const place = (x: number, z: number, sc: number): void => {
     addCherry(c, x, z, sc);
+    avenueTrees.push({ x, z });
     n++;
   };
   const ms = roadsW.find((r) => r.id === 'mountain-street')!;
