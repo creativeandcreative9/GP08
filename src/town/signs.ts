@@ -1,4 +1,4 @@
-import { DynamicTexture, StandardMaterial, Texture, Color3, type Scene } from '@babylonjs/core';
+import { DynamicTexture, Material, StandardMaterial, Texture, Color3, type Scene } from '@babylonjs/core';
 
 export const FONT_STACK = "'Noto Sans JP', 'Hiragino Sans', 'Yu Gothic', 'Meiryo', 'IPAGothic', 'IPAPGothic', sans-serif";
 
@@ -8,6 +8,12 @@ export interface SignStyle {
   /** Second band colour (stripe along the top and bottom). */
   accent?: string;
   icon?: 'cross' | 'leaf' | 'rail';
+  /**
+   * Road paint (e.g. 止まれ): white glyphs on black, one glyph per slot along the cell, each rotated a quarter turn
+   * and stretched so that the cell can be laid along a lane. The cell is used as an opacity mask by
+   * `SignAtlas.paintMaterial` (black = transparent); the paint colour comes from the vertex colours.
+   */
+  paint?: boolean;
 }
 
 /** Sign look per label. Anything not listed gets the default board. */
@@ -49,6 +55,7 @@ const STYLES: Record<string, SignStyle> = {
   駅: { bg: '#1a56a8', fg: '#ffffff', accent: '#ffffff' },
   海辺の公園: { bg: '#2f7d4f', fg: '#ffffff', accent: '#bfe8c8' },
   公園: { bg: '#2f7d4f', fg: '#ffffff', accent: '#bfe8c8' },
+  止まれ: { bg: '#000000', fg: '#ffffff', paint: true },
 };
 const DEFAULT_STYLE: SignStyle = { bg: '#3b4a5a', fg: '#ffffff', accent: '#aab8c8' };
 
@@ -68,16 +75,23 @@ export interface UvRect {
 export class SignAtlas {
   readonly texture: DynamicTexture;
   readonly material: StandardMaterial;
+  /**
+   * Material for the `paint` cells (road paint such as 止まれ): the atlas is used as an alpha-tested opacity mask,
+   * so quads using it lie flat on the asphalt as white glyphs with no background. It also has a stronger depth bias
+   * than the ground decals, so the paint is never swallowed by the asphalt.
+   */
+  readonly paintMaterial: StandardMaterial;
   private cells = new Map<string, UvRect>();
 
   constructor(scene: Scene, labels: readonly string[]) {
+    const unique = [...new Set(labels)];
+    // ROWS is the minimum: the atlas grows by whole rows when more labels are asked for
+    const rows = Math.max(ROWS, Math.ceil(unique.length / COLS));
     const W = CELL_W * COLS;
-    const H = CELL_H * ROWS;
+    const H = CELL_H * rows;
     this.texture = new DynamicTexture('signAtlas', { width: W, height: H }, scene, true, Texture.TRILINEAR_SAMPLINGMODE);
     this.texture.anisotropicFilteringLevel = 8;
     const ctx = this.texture.getContext() as CanvasRenderingContext2D;
-    const unique = [...new Set(labels)];
-    if (unique.length > COLS * ROWS) throw new Error('too many sign labels for the atlas');
     unique.forEach((label, n) => {
       const col = n % COLS;
       const row = Math.floor(n / COLS);
@@ -97,6 +111,23 @@ export class SignAtlas {
     this.material.emissiveColor = new Color3(0.28, 0.28, 0.28);
     this.material.specularColor = Color3.Black();
     this.material.backFaceCulling = false;
+
+    const pm = new StandardMaterial('paintMat', scene);
+    pm.diffuseColor = Color3.White();
+    pm.specularColor = Color3.Black();
+    pm.opacityTexture = this.texture;
+    this.texture.getAlphaFromRGB = true; // alpha = luminance of the cell: only the paint cells are looked up this way
+    pm.transparencyMode = Material.MATERIAL_ALPHATEST;
+    pm.alphaCutOff = 0.45;
+    pm.backFaceCulling = false;
+    pm.twoSidedLighting = true;
+    pm.zOffset = -5;
+    pm.zOffsetUnits = -10;
+    this.paintMaterial = pm;
+  }
+
+  has(label: string): boolean {
+    return this.cells.has(label);
   }
 
   uv(label: string): UvRect {
@@ -105,9 +136,34 @@ export class SignAtlas {
     return r;
   }
 
+  /** Road paint: glyphs stacked along the cell (u), the glyph tops pointing to -u, i.e. towards the stop line. */
+  private drawPaint(ctx: CanvasRenderingContext2D, label: string): void {
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(0, 0, CELL_W, CELL_H);
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    const glyphs = Array.from(label);
+    const slot = CELL_W / glyphs.length;
+    glyphs.forEach((ch, i) => {
+      ctx.save();
+      ctx.translate(slot * (i + 0.5), CELL_H / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.scale(1, 1.4);
+      ctx.font = `bold 100px ${FONT_STACK}`;
+      ctx.fillText(ch, 0, 0);
+      ctx.restore();
+    });
+  }
+
   private drawCell(ctx: CanvasRenderingContext2D, x0: number, y0: number, label: string, s: SignStyle): void {
     ctx.save();
     ctx.translate(x0, y0);
+    if (s.paint) {
+      this.drawPaint(ctx, label);
+      ctx.restore();
+      return;
+    }
     ctx.fillStyle = s.bg;
     ctx.fillRect(0, 0, CELL_W, CELL_H);
     // accent bands + inner frame

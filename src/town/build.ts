@@ -6,9 +6,10 @@ import { buildInfill } from './infill';
 import { buildLots } from './lots';
 import { SMALL_SHOPS } from './shops';
 import { OccGrid } from './site';
-import { buildPlaza, buildRailway, buildRoads, buildStation, buildCrossings } from './network';
+import { buildPlaza, buildRailway, buildRoads, buildStation } from './network';
 import { buildAvenues, buildForest, buildPoles, buildTrail } from './props';
 import { SignAtlas } from './signs';
+import { buildStreetscape } from './streetscape';
 import { buildSummit } from './summit';
 import { createTerrainMeshes, heightAt } from './terrain';
 import { makeRng, type Rect } from './util';
@@ -48,7 +49,7 @@ export function buildTown(scene: Scene): Town {
   const t0 = performance.now();
   const root = new TransformNode('town', scene);
 
-  const labels = ['駅', '海辺の公園', '公園', '体育館', 'アパート', 'マンション', '売地', ...SMALL_SHOPS];
+  const labels = ['駅', '海辺の公園', '公園', '体育館', 'アパート', 'マンション', '売地', '止まれ', ...SMALL_SHOPS];
   for (const l of LOTS) if (l.kind !== 'home' || l.floors >= 3) labels.push(l.label);
 
   const c: Ctx = {
@@ -79,7 +80,6 @@ export function buildTown(scene: Scene): Town {
     last = now;
   };
   buildRoads(c);
-  buildCrossings(c);
   buildRailway(c);
   mark('railway');
   buildStation(c);
@@ -103,6 +103,8 @@ export function buildTown(scene: Scene): Town {
   mark('poles+wires');
   const forest = buildForest(c, trail);
   mark('forest');
+  const street = buildStreetscape(c);
+  budget.push(`street ${street.vertices}`);
   c.report.push(`vertices by stage: ${budget.join(', ')}`);
   c.report.push(`cherry trees on avenues/plaza: ${avenues}, utility poles: ${poles.poles}, forest trees: ${forest}`);
 
@@ -115,6 +117,7 @@ export function buildTown(scene: Scene): Town {
     ...c.main.toMeshes('town', scene, mainMat),
     ...c.forest.toMeshes('forest', scene, mainMat),
     ...c.signs.toMeshes('signs', scene, c.atlas.material),
+    ...street.meshes,
     c.dec0.toMesh('decals0', scene, d0),
     c.dec1.toMesh('decals1', scene, d1),
     c.dec2.toMesh('decals2', scene, d2),
