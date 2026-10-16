@@ -55,7 +55,7 @@ function createSky(scene: Scene): Mesh {
   return sky;
 }
 
-type View = 'overview' | 'street' | 'summit' | 'platform' | 'default';
+type View = 'overview' | 'street' | 'summit' | 'platform' | 'alley' | 'default';
 
 function applyView(camera: ArcRotateCamera, scene: Scene, town: Town, view: View): void {
   const groundY = (x: number, z: number): number => town.heightAt(x, z);
@@ -81,6 +81,16 @@ function applyView(camera: ArcRotateCamera, scene: Scene, town: Town, view: View
       const eye = new Vector3(330, groundY(330, 745) + 18, 745);
       camera.upperBetaLimit = Math.PI / 2 + 0.3;
       camera.setTarget(new Vector3(eye.x - 40, eye.y - 3, eye.z + 6));
+      camera.setPosition(eye);
+      break;
+    }
+    case 'alley': {
+      // standing in a dead-end back alley, looking at the open lot hidden at its end
+      const l = town.alleyLookout;
+      if (!l) break;
+      const eye = new Vector3(l.x, groundY(l.x, l.z) + 18, l.z);
+      camera.upperBetaLimit = Math.PI / 2 + 0.3;
+      camera.setTarget(new Vector3(eye.x + l.dx * 40, eye.y - 4, eye.z + l.dz * 40));
       camera.setPosition(eye);
       break;
     }
@@ -138,7 +148,7 @@ export function createScene(engine: Engine, canvas: HTMLCanvasElement): GameScen
 
   scene.metadata = { ...(scene.metadata ?? {}), town };
   const q = new URLSearchParams(location.search).get('view');
-  const view: View = q === 'overview' || q === 'street' || q === 'summit' || q === 'platform' ? q : 'default';
+  const view: View = q === 'overview' || q === 'street' || q === 'summit' || q === 'platform' || q === 'alley' ? q : 'default';
   applyView(camera, scene, town, view);
 
   return { scene, camera, town };

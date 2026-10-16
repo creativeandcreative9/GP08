@@ -1,3 +1,4 @@
+import { buildAlleys, type AlleyStats } from './alleys';
 import type { Ctx } from './ctx';
 import { frameFacing } from './frame';
 import { addApartment, addHouse, addHouseLite } from './houses';
@@ -14,6 +15,7 @@ export interface InfillStats {
   shops: number;
   apartments: number;
   parking: number;
+  alleys: AlleyStats;
 }
 
 type Kind = 'house' | 'shop' | 'apart' | 'parking';
@@ -52,7 +54,9 @@ const GAP = 5;
  */
 export function buildInfill(c: Ctx, grid: OccGrid): InfillStats {
   const r = c.rnd;
-  const stats: InfillStats = { houses: 0, shops: 0, apartments: 0, parking: 0 };
+  // back alleys and the open lots hidden along them are cut first, so nothing is built over them
+  const alleys = buildAlleys(c, grid, GAP);
+  const stats: InfillStats = { houses: 0, shops: 0, apartments: 0, parking: 0, alleys };
   const range = (a: number, b: number): number => a + (b - a) * r();
   let counter = 0;
 

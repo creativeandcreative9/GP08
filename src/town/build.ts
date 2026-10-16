@@ -26,6 +26,8 @@ export interface Town {
   summitDeck: { x: number; z: number; y: number };
   /** Build notes: clipped lots, counts, geometry statistics. */
   report: readonly string[];
+  /** Eye position in a back alley looking at a hidden open lot (direction dx,dz), if one was built. */
+  alleyLookout?: { x: number; z: number; dx: number; dz: number };
 }
 
 function vertexColourMaterial(scene: Scene, name: string, zOffset = 0, zUnits = 0): StandardMaterial {
@@ -45,7 +47,7 @@ export function buildTown(scene: Scene): Town {
   const t0 = performance.now();
   const root = new TransformNode('town', scene);
 
-  const labels = ['駅', '海辺の公園', '公園', '体育館', 'アパート', 'マンション', ...SMALL_SHOPS];
+  const labels = ['駅', '海辺の公園', '公園', '体育館', 'アパート', 'マンション', '売地', ...SMALL_SHOPS];
   for (const l of LOTS) if (l.kind !== 'home' || l.floors >= 3) labels.push(l.label);
 
   const c: Ctx = {
@@ -88,6 +90,7 @@ export function buildTown(scene: Scene): Town {
   for (const o of c.obstacles) grid.claim(o, 7);
   const infill = buildInfill(c, grid);
   c.report.push(`infill: ${infill.houses} houses, ${infill.shops} small shops, ${infill.apartments} apartment blocks, ${infill.parking} parking lots`);
+  c.report.push(`alleys: ${infill.alleys.alleys} (${infill.alleys.through} through), hidden open lots: ${infill.alleys.lots}`);
   mark('infill');
   const summit = buildSummit(c);
   const trail = buildTrail(c);
@@ -127,5 +130,5 @@ export function buildTown(scene: Scene): Town {
   }
   c.report.push(`town meshes: ${meshes.length + 2} (+ sky), vertices ${verts}, triangles ${tris}, built in ${Math.round(performance.now() - t0)} ms`);
 
-  return { root, heightAt, obstacles: c.obstacles, summitDeck: summit.deck, report: c.report };
+  return { root, heightAt, obstacles: c.obstacles, summitDeck: summit.deck, report: c.report, alleyLookout: infill.alleys.lookout };
 }
