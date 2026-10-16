@@ -3,6 +3,16 @@ import { ChunkedBatch, MeshBatch } from './batch';
 import type { SignAtlas } from './signs';
 import type { Rect } from './util';
 
+/** A built named lot: building centre, front direction (axis-aligned) and half sizes along/across the front. */
+export interface Spot {
+  x: number;
+  z: number;
+  fx: number;
+  fz: number;
+  hu: number;
+  hv: number;
+}
+
 /** Shared state while the town is being assembled. */
 export interface Ctx {
   scene: Scene;
@@ -19,6 +29,8 @@ export interface Ctx {
   dec3: MeshBatch;
   atlas: SignAtlas;
   obstacles: Rect[];
+  /** Built named lots by id (shops), used for camera presets. */
+  spots: Record<string, Spot>;
   report: string[];
   rnd: () => number;
 }

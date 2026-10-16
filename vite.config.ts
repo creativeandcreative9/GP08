@@ -19,6 +19,9 @@ const MIME: Record<string, string> = {
 
 const PREFIX = '/private/';
 
+/** Dev/preview port. GP08_PORT lets several checkouts run their servers side by side. */
+const PORT = Number(process.env.GP08_PORT ?? 5178);
+
 /** Serves licensed assets from a private directory (never part of the build output). */
 function privateAssets(): Plugin {
   const dir = path.resolve(process.env.GP08_PRIVATE_DIR ?? path.resolve(here, 'private-assets'));
@@ -82,8 +85,8 @@ function privateAssets(): Plugin {
 
 export default defineConfig({
   plugins: [privateAssets()],
-  server: { port: 5178, host: '127.0.0.1', strictPort: true },
-  preview: { port: 5178, host: '127.0.0.1', strictPort: true },
+  server: { port: PORT, host: '127.0.0.1', strictPort: true },
+  preview: { port: PORT, host: '127.0.0.1', strictPort: true },
   // babylon-mmd loads its wasm via new URL(..., import.meta.url), so it must not be pre-bundled.
   // @babylonjs/core is excluded too: otherwise the app and babylon-mmd would get two copies of it
   // (separate loader-plugin registries, so the .pmx loader would not be found).

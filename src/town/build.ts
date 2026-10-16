@@ -1,6 +1,6 @@
 import { Color3, Mesh, StandardMaterial, TransformNode, type Scene } from '@babylonjs/core';
 import { ChunkedBatch, MeshBatch } from './batch';
-import type { Ctx } from './ctx';
+import type { Ctx, Spot } from './ctx';
 import { LOTS } from './layout';
 import { buildClouds } from './clouds';
 import { buildInfill } from './infill';
@@ -26,6 +26,8 @@ export interface Town {
   summitDeck: { x: number; z: number; y: number };
   /** Build notes: clipped lots, counts, geometry statistics. */
   report: readonly string[];
+  /** Built named shops by lot id (centre, front direction, half sizes), for camera presets. */
+  spots: Readonly<Record<string, Spot>>;
   /** Eye position in a back alley looking at a hidden open lot (direction dx,dz), if one was built. */
   alleyLookout?: { x: number; z: number; dx: number; dz: number };
 }
@@ -61,6 +63,7 @@ export function buildTown(scene: Scene): Town {
     dec3: new MeshBatch(),
     atlas: new SignAtlas(scene, labels),
     obstacles: [],
+    spots: {},
     report: [],
     rnd: makeRng(20260415),
   };
@@ -130,5 +133,5 @@ export function buildTown(scene: Scene): Town {
   }
   c.report.push(`town meshes: ${meshes.length + 2} (+ sky), vertices ${verts}, triangles ${tris}, built in ${Math.round(performance.now() - t0)} ms`);
 
-  return { root, heightAt, obstacles: c.obstacles, summitDeck: summit.deck, report: c.report, alleyLookout: infill.alleys.lookout };
+  return { root, heightAt, obstacles: c.obstacles, summitDeck: summit.deck, report: c.report, spots: c.spots, alleyLookout: infill.alleys.lookout };
 }

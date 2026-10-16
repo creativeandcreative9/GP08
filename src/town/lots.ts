@@ -6,10 +6,10 @@ import { LOTS, type Lot } from './layout';
 import { addPark } from './parks';
 import { addBank, addCampus, addGym, addHospital, frameRect } from './publicbldg';
 import { addHotel, addShop } from './shops';
-import { freeRects, lotRect, roadClearance } from './site';
+import { freeRects, lotRect, roadClearance, siteBlock } from './site';
 import { addCherry } from './trees';
 import { heightAt } from './terrain';
-import { hex, type RGB, type Rect } from './util';
+import { hex, rectsOverlap, type RGB, type Rect } from './util';
 
 const PAD: Record<Lot['kind'], RGB> = {
   home: hex(0xcdd9a8),
@@ -35,6 +35,28 @@ function frameFor(r: Rect): { f: Frame; hu: number; hv: number } {
 }
 
 const area = (r: Rect): number => (r.maxX - r.minX) * (r.maxZ - r.minZ);
+
+function siteBlocked(r: Rect): boolean {
+  for (let x = r.minX; x <= r.maxX; x += 8) for (let z = r.minZ; z <= r.maxZ; z += 8) if (siteBlock(x, z)) return true;
+  return siteBlock(r.maxX, r.maxZ) !== undefined;
+}
+
+/**
+ * Hand-drawn blocks often stop well short of the street, and the infill would then put a row of houses in
+ * front of the shop. Pull the building forward so that its front stands just behind the sidewalk.
+ */
+function pullToStreet(f: Frame, hu: number, hv: number, claimed: readonly Rect[], own: Rect): Frame {
+  const fc = f.pt(0, 0, hv);
+  const gap = roadClearance(fc[0], fc[2]).d;
+  for (let shift = Math.floor(Math.max(0, gap - 26) / 4) * 4; shift > 0; shift -= 4) {
+    const g = new Frame(f.cx + f.fx * shift, f.cz + f.fz * shift, f.fx, f.fz);
+    const r = frameRect(g, -hu, hu, -hv, hv + 10); // with a strip in front for the shopfront
+    if (claimed.some((o) => o !== own && rectsOverlap(o, r, 4))) continue;
+    if (siteBlocked(r)) continue;
+    return g;
+  }
+  return f;
+}
 
 /** Builds the named lots; returns the grounds (parks, campuses) that infill must not use. */
 export function buildLots(c: Ctx): Rect[] {
@@ -64,7 +86,7 @@ export function buildLots(c: Ctx): Rect[] {
     res.pieces.forEach((piece, pi) => {
       claimed.push(piece);
       if (lot.kind === 'park' || lot.kind === 'public') reserved.push(piece);
-      pad(c, piece, PAD[lot.kind]);
+      if (lot.kind !== 'shop') pad(c, piece, PAD[lot.kind]);
       const { f, hu, hv } = frameFor(piece);
       if (lot.kind === 'park') {
         if (pi === 0) {
@@ -95,9 +117,13 @@ export function buildLots(c: Ctx): Rect[] {
           c.report.push(`shop ${lot.id} too small after clipping, skipped`);
           return;
         }
-        const rect = frameRect(f, -hu2, hu2, -hv2, hv2);
-        if (lot.label === 'ホテル') addHotel(c, lot, rect, f, hu2, hv2);
-        else addShop(c, lot, rect, f, hu2, hv2);
+        const fs = pullToStreet(f, hu2, hv2, claimed, piece);
+        const rect = frameRect(fs, -hu2, hu2, -hv2, hv2);
+        claimed.push(rect);
+        pad(c, frameRect(fs, -hu2 - 6, hu2 + 6, -hv2 - 6, hv2 + 8), PAD.shop);
+        c.spots[lot.id] = { x: fs.cx, z: fs.cz, fx: fs.fx, fz: fs.fz, hu: hu2, hv: hv2 };
+        if (lot.label === 'ホテル') addHotel(c, lot, rect, fs, hu2, hv2);
+        else addShop(c, lot, rect, fs, hu2, hv2);
         stats.shops++;
       } else if (lot.floors >= 3) {
         // apartment blocks

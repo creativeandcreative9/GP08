@@ -14,6 +14,7 @@ import {
 } from '@babylonjs/core';
 import { SPAWN } from './town/layout';
 import { buildTown, type Town } from './town/build';
+import { roadClearance, roadsW } from './town/site';
 
 export interface GameScene {
   scene: Scene;
@@ -55,7 +56,39 @@ function createSky(scene: Scene): Mesh {
   return sky;
 }
 
-type View = 'overview' | 'street' | 'summit' | 'platform' | 'alley' | 'default';
+const VIEWS = ['overview', 'street', 'summit', 'platform', 'alley', 'ref1', 'ref2', 'ref3', 'ref4', 'ref5'] as const;
+type View = (typeof VIEWS)[number] | 'default';
+
+/** Eye height of a standing person (≈1.5 m) for the eye-level comparison shots. */
+const EYE = 19;
+
+function eyeLevel(camera: ArcRotateCamera, eye: Vector3, target: Vector3): void {
+  camera.upperBetaLimit = Math.PI / 2 + 0.3;
+  camera.setTarget(target);
+  camera.setPosition(eye);
+}
+
+/**
+ * Eye-level shot on the sidewalk in front of a named shop, looking along its frontage with the shop on the left
+ * (the composition of the reference shop-street images). `look` overrides the point looked at.
+ */
+function shopfrontView(camera: ArcRotateCamera, town: Town, id: string, look?: (eye: Vector3) => Vector3): boolean {
+  const s = town.spots[id];
+  if (!s) return false;
+  const rx = s.fz; // local right (facing out of the front)
+  const rz = -s.fx;
+  const fcx = s.x + s.fx * s.hv;
+  const fcz = s.z + s.fz * s.hv;
+  const d = roadClearance(fcx, fcz).d; // front of the shop to the road edge
+  const v = s.hv + Math.min(Math.max(d * 0.5, 12), 24); // stay on the shop side of the street trees
+  const ex = s.x + s.fx * v + rx * s.hu * 0.8;
+  const ez = s.z + s.fz * v + rz * s.hu * 0.8;
+  const eye = new Vector3(ex, town.heightAt(ex, ez) + EYE, ez);
+  const tx = s.x + s.fx * (s.hv + 4) - rx * s.hu * 1.5;
+  const tz = s.z + s.fz * (s.hv + 4) - rz * s.hu * 1.5;
+  eyeLevel(camera, eye, look ? look(eye) : new Vector3(tx, eye.y - 1.5, tz));
+  return true;
+}
 
 function applyView(camera: ArcRotateCamera, scene: Scene, town: Town, view: View): void {
   const groundY = (x: number, z: number): number => town.heightAt(x, z);
@@ -94,6 +127,50 @@ function applyView(camera: ArcRotateCamera, scene: Scene, town: Town, view: View
       camera.setPosition(eye);
       break;
     }
+    // ---- comparison shots matching the reference images (see docs/20261016_visual_eval.md) ----
+    case 'ref1': // shop street: the sidewalk in front of the Japanese sweets shop
+      shopfrontView(camera, town, 'e-wagashi');
+      break;
+    case 'ref2': {
+      // convenience store at the corner, the plaza cherries and the station behind
+      const s = town.spots['w-conbini'];
+      if (!s) break;
+      // stand at the end of the frontage farther from the station, looking towards the station front
+      const rx = s.fz;
+      const rz = -s.fx;
+      const far = Math.hypot(s.x + rx * s.hu, s.z + rz * s.hu - 600) > Math.hypot(s.x - rx * s.hu, s.z - rz * s.hu - 600) ? 1 : -1;
+      const v = s.hv + 26;
+      const ex = s.x + s.fx * v + rx * s.hu * 0.95 * far;
+      const ez = s.z + s.fz * v + rz * s.hu * 0.95 * far;
+      const eye = new Vector3(ex, groundY(ex, ez) + EYE, ez);
+      eyeLevel(camera, eye, new Vector3(30, eye.y + 4, 600));
+      break;
+    }
+    case 'ref3': {
+      // the station entrance (the ticket gates will be inside)
+      const eye = new Vector3(-36, groundY(-36, 560) + EYE, 560);
+      eyeLevel(camera, eye, new Vector3(6, eye.y + 2, 640));
+      break;
+    }
+    case 'ref4': {
+      // cherry avenue: the sidewalk of the street from the plaza to the mountain, looking towards the mountain
+      const r = roadsW.find((w) => w.id === 'mountain-street');
+      if (!r) break;
+      const p0 = r.pts[0]!;
+      const p1 = r.pts[r.pts.length - 1]!;
+      const l = Math.hypot(p1.x - p0.x, p1.z - p0.z);
+      const dx = (p1.x - p0.x) / l;
+      const dz = (p1.z - p0.z) / l;
+      const off = r.width / 2 + 8;
+      const ex = p0.x + dx * 420 - dz * off;
+      const ez = p0.z + dz * 420 + dx * off;
+      const eye = new Vector3(ex, groundY(ex, ez) + EYE, ez);
+      eyeLevel(camera, eye, new Vector3(ex + dx * 120 + dz * 12, eye.y + 3, ez + dz * 120 - dx * 12));
+      break;
+    }
+    case 'ref5': // cafe terrace on the shop street
+      shopfrontView(camera, town, 'w-cafe');
+      break;
     case 'summit': {
       const d = town.summitDeck;
       const eye = new Vector3(d.x - 14, d.y + 18, d.z - 10);
@@ -148,7 +225,7 @@ export function createScene(engine: Engine, canvas: HTMLCanvasElement): GameScen
 
   scene.metadata = { ...(scene.metadata ?? {}), town };
   const q = new URLSearchParams(location.search).get('view');
-  const view: View = q === 'overview' || q === 'street' || q === 'summit' || q === 'platform' || q === 'alley' ? q : 'default';
+  const view: View = (VIEWS as readonly string[]).includes(q ?? '') ? (q as View) : 'default';
   applyView(camera, scene, town, view);
 
   return { scene, camera, town };

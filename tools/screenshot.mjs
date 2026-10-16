@@ -13,13 +13,14 @@ const query = arg('query', '');
 const out = arg('out', 'screenshots/shot.png');
 const wait = Number(arg('wait', '1000'));
 const timeout = Number(arg('timeout', '60000'));
+const port = Number(process.env.GP08_PORT ?? 5178);
 
 let server;
 let browser;
 let failed = false;
 
 try {
-  server = await createServer({ server: { port: 5178, host: '127.0.0.1', strictPort: true } });
+  server = await createServer({ server: { port, host: '127.0.0.1', strictPort: true } });
   await server.listen();
 
   browser = await chromium.launch({
@@ -35,7 +36,7 @@ try {
     console.error(`[pageerror] ${e.message}`);
   });
 
-  await page.goto(`http://127.0.0.1:5178/${query}`);
+  await page.goto(`http://127.0.0.1:${port}/${query}`);
   try {
     await page.waitForFunction(() => window.__gp08 && window.__gp08.ready === true, null, { timeout });
   } catch {
