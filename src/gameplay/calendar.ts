@@ -38,6 +38,11 @@ export function nextDay(l: LifeState): void {
   l.day = Math.min(9999, l.day + 1); l.minute = 8 * 60; l.collected = [];
   l.weather = WEATHERS[(l.day * 7 + Math.floor(l.day / 3)) % 3]!;
 }
+/** After midnight, the next 08:00 is still today; the clock already renewed the day. */
+export function restUntilMorning(l: LifeState): void {
+  if (l.minute < 8 * 60) l.minute = 8 * 60;
+  else nextDay(l);
+}
 /** One game day lasts 24 real minutes. Hidden tabs and dialogs do not advance it. */
 export function advanceClock(l: LifeState, seconds: number): void {
   if (!Number.isFinite(seconds) || seconds <= 0) return;

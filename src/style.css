@@ -1,233 +1,276 @@
-html,
-body {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  background: #bfe3f5;
+:root {
+  color-scheme: light;
+  --life-ink: #324b46;
+  --life-muted: #66756a;
+  --life-paper: #fffdf7;
+  --life-border: #d8ded0;
+  --life-green: #356c5d;
+  --life-rose: #a75a70;
+  --life-shadow: 0 6px 28px #203c3420;
+  --life-wayfinder-top: calc(env(safe-area-inset-top, 0px) + 100px);
 }
 
-#renderCanvas {
-  display: block;
-  width: 100%;
-  height: 100%;
-  outline: none;
-  touch-action: none;
-}
+html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #bfe3f5; }
+#renderCanvas { display: block; width: 100%; height: 100%; outline: none; touch-action: none; }
 
 #hud {
-  position: fixed;
-  top: 8px;
-  left: 8px;
-  padding: 4px 8px;
-  font: 14px/1.4 system-ui, sans-serif;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.45);
-  border-radius: 4px;
-  pointer-events: none;
-  user-select: none;
+  position: fixed; bottom: 12px; left: 16px; padding: 3px 7px;
+  font: 10px/1.4 system-ui, sans-serif; letter-spacing: .04em; color: #fff;
+  background: #263e4559; border-radius: 5px; pointer-events: none; user-select: none;
 }
-
 #help {
-  position: fixed;
-  bottom: 8px;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 4px 12px;
-  font: 13px/1.4 system-ui, sans-serif;
-  color: #fff;
-  background: rgba(0, 0, 0, 0.4);
-  border-radius: 4px;
-  pointer-events: none;
-  user-select: none;
-  white-space: nowrap;
+  position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%);
+  padding: 6px 14px; font: 11px/1.5 system-ui, sans-serif; color: #fff;
+  background: #263e456b; border: 1px solid #ffffff24; border-radius: 20px;
+  pointer-events: none; user-select: none; white-space: nowrap;
 }
 
 .life-ui {
-  position: fixed;
-  inset: 0;
-  pointer-events: none;
-  color: #28473f;
-  font: 14px/1.6 system-ui, sans-serif;
+  position: fixed; inset: 0; pointer-events: none; color: var(--life-ink);
+  font: 14px/1.65 'Hiragino Kaku Gothic ProN', 'Yu Gothic', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
-
 .life-ui button {
-  pointer-events: auto;
-  border: 1px solid #b9cabc;
-  border-radius: 10px;
-  padding: 9px 14px;
-  color: #28473f;
-  background: #fffdf5;
-  font: inherit;
-  cursor: pointer;
+  pointer-events: auto; border: 1px solid var(--life-border); border-radius: 12px;
+  padding: 10px 15px; color: var(--life-ink); background: var(--life-paper);
+  font: inherit; font-weight: 600; line-height: 1.45; cursor: pointer;
+  transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
 }
-
-.life-ui button:hover:not(:disabled) { background: #e7f0df; }
-.life-ui button:focus-visible { outline: 3px solid #356b69; outline-offset: 3px; }
+.life-ui button:hover:not(:disabled) { background: #eef3e8; border-color: #9cb4a1; box-shadow: 0 2px 7px #28473f12; }
+.life-ui button:focus-visible { outline: 3px solid #287c77; outline-offset: 3px; }
 .life-ui button:disabled { opacity: .6; cursor: default; }
+.life-ui .life-primary { color: #fff; background: var(--life-green); border-color: var(--life-green); }
+.life-ui .life-primary:hover:not(:disabled) { background: #28564a; border-color: #28564a; }
 
 .life-bar {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  left: 230px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 8px;
+  position: absolute; top: max(18px, env(safe-area-inset-top)); left: max(22px, env(safe-area-inset-left));
+  right: max(22px, env(safe-area-inset-right)); display: flex; align-items: flex-start; flex-wrap: wrap;
+  justify-content: space-between; gap: 5px 20px;
 }
-
-.life-bar strong, .life-brand, .life-save-status {
-  padding: 5px 10px;
-  background: #fffdf5ed;
-  border-radius: 10px;
+.life-identity {
+  min-width: 238px; padding: 11px 16px; border: 1px solid #ffffffa8; border-radius: 16px;
+  background: #fffdf5eb; box-shadow: var(--life-shadow);
 }
-.life-brand { margin-right: auto; font-weight: 600; }
-.life-save-status { font-size: 11px; }
+.life-brand { display: block; font: 600 18px/1.4 'Yu Mincho', 'Hiragino Mincho ProN', serif; letter-spacing: .08em; }
+.life-brand::before { content: ''; display: inline-block; width: 8px; height: 8px; margin: 0 9px 2px 0; border-radius: 2px 7px 2px 7px; background: #ce8899; transform: rotate(-20deg); }
+.life-status { display: flex; gap: 8px 16px; align-items: center; flex-wrap: wrap; padding-top: 4px; }
+.life-clock, .life-bar strong { font-size: 11px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.life-clock { color: #526a60; }
+.life-bar strong { color: #6c6353; }
+.life-toolbar {
+  display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 4px; max-width: calc(100% - 300px);
+  padding: 5px; border: 1px solid #ffffffa8; border-radius: 17px; background: #fffdf5e8; box-shadow: var(--life-shadow);
+}
+.life-toolbar button { padding: 10px 12px; border-color: transparent; background: transparent; font-size: 12px; }
+.life-toolbar button:hover:not(:disabled) { border-color: #d8ded0; }
+.life-save-status { flex: 0 0 100%; padding-right: 6px; text-align: right; color: #3c5a50; font-size: 10px; text-shadow: 0 1px 3px #fff, 0 0 6px #fff; }
 
 .life-sidebar {
-  position: absolute;
-  top: 64px;
-  left: 12px;
-  display: grid;
-  gap: 10px;
-  width: min(280px, calc(100% - 24px));
-  max-height: calc(100dvh - 240px);
-  overflow-y: auto;
+  position: absolute; top: 126px; left: max(22px, env(safe-area-inset-left)); display: grid; align-content: start; gap: 10px;
+  width: min(280px, calc(100% - 44px)); max-height: calc(100dvh - 320px); overflow-y: auto;
+  scrollbar-width: thin; scrollbar-color: #69847660 transparent; pointer-events: auto;
 }
-.life-goal {
-  padding: 15px 19px;
-  border: 1px solid #e7ddce;
-  border-radius: 16px;
-  background: #fffdf5ed;
-  box-shadow: 0 6px 24px #26392d16;
+.life-sidebar:has(.life-context:not([hidden])) .life-goal,
+.life-ui[data-night] .life-goal { display: none; }
+.life-sidebar:has(.life-context:not([hidden])) .life-navigation { display: none; }
+.life-goal, .life-context {
+  padding: 17px 18px; border: 1px solid #fffefa; border-radius: 17px;
+  background: #fffdf5eb; box-shadow: var(--life-shadow);
 }
-.life-goal strong { font-size: 16px; }
-.life-goal ol { list-style: none; padding: 0; margin: 10px 0; }
-.life-goal li { margin: 4px 0; }
-.life-goal .complete { color: #537153; }
-.life-goal small { color: #69786b; }
-.life-goal p { margin: 10px 0; }
+.life-goal strong { display: block; font-size: 14px; font-weight: 700; letter-spacing: .025em; }
+.life-goal-progress { display: flex; gap: 5px; margin-top: 12px; }
+.life-goal-progress span { flex: 1; height: 3px; border-radius: 10px; background: #dce2d8; }
+.life-goal-progress span.complete { background: #7ba58a; }
+.life-goal ol { list-style: none; padding: 0; margin: 12px 0; }
+.life-goal li { position: relative; margin: 7px 0; padding-left: 20px; font-size: 12px; line-height: 1.65; color: #69776e; }
+.life-goal li::before { content: ''; position: absolute; top: .45em; left: 1px; width: 8px; height: 8px; border: 1px solid #b0beae; border-radius: 50%; }
+.life-goal li.current { color: #304e43; font-weight: 700; }
+.life-goal li.current::before { border-color: #ba6b80; background: #d294a4; box-shadow: 0 0 0 3px #d294a41a; }
+.life-goal li.complete { color: #668569; }
+.life-goal li.complete::before { content: '✓'; top: 0; left: 0; border: 0; width: auto; height: auto; font-size: 12px; }
+.life-goal small { color: var(--life-muted); font-size: 11px; line-height: 1.6; }
+.life-goal > small { display: block; }
+.life-goal p { margin: 8px 0; font-size: 12px; }
+.life-navigation { margin: 0; padding: 10px 13px; border: 1px solid #ffffff80; border-radius: 12px; background: #fffdf5e6; font-size: 12px; }
+.life-navigation:empty, .life-rest-status:empty { display: none; }
+body:has(.life-wayfinder:not([hidden])) .life-navigation { display: none; }
+.life-rest-status { margin: 0; padding: 12px 14px; border: 1px solid #ffffff80; border-radius: 12px; background: #e9f1e3f2; font-size: 12px; }
 
-.life-navigation {
-  margin: 0;
-  padding: 9px 14px;
-  border-radius: 12px;
-  background: #fffdf5e8;
-  font-size: 12px;
-}
-.life-rest-status { margin: 0; padding: 12px 14px; border-radius: 12px; background: #e7f0dff5; font-size: 12px; }
-.life-rest-status:empty { display: none; }
+.life-context { border-color: #dfc7af; background: linear-gradient(135deg, #fffaeeeF, #f6ece4f5); }
+.life-context-kicker, .life-celebration-kicker { display: block; color: #8b6653; font-size: 10px; letter-spacing: .12em; }
+.life-context h3 { margin: 5px 0 6px; font: 700 18px/1.5 'Yu Mincho', 'Hiragino Mincho ProN', serif; }
+.life-context p { margin: 0 0 12px; font-size: 12px; line-height: 1.8; }
+.life-context-actions { display: flex; flex-wrap: wrap; gap: 7px; }
+.life-context-actions button { flex: 1 0 auto; padding: 9px 10px; font-size: 12px; }
+.life-context[hidden], .life-celebration[hidden] { display: none; }
 
 .life-ui .life-interact {
-  position: absolute;
-  bottom: 102px;
-  left: 50%;
-  transform: translateX(-50%);
-  box-shadow: 0 4px 16px #273f3220;
-  white-space: nowrap;
+  position: absolute; bottom: 100px; left: 50%; transform: translateX(-50%);
+  padding: 13px 22px; box-shadow: 0 5px 24px #183b3630; border-radius: 28px; white-space: nowrap;
 }
-.life-ui .life-interact:not(:disabled) { color: white; background: #356b59; border-color: #356b59; }
-.life-ui .life-interact:hover:not(:disabled) { background: #254d40; }
-
+.life-ui .life-interact:not(:disabled) { color: #fff; background: var(--life-green); border-color: #ffffff60; }
+.life-ui .life-interact:hover:not(:disabled) { background: #28564a; }
+.life-ui .life-interact:disabled { opacity: .85; font-size: 12px; color: #586b60; background: #fffdf5df; }
 .life-notice {
-  position: absolute;
-  bottom: 46px;
-  left: 50%;
-  transform: translateX(-50%);
-  max-width: min(640px, calc(100% - 48px));
-  width: max-content;
-  padding: 8px 14px;
-  margin: 0;
-  border-radius: 12px;
-  background: #fffdf5ed;
-  text-align: center;
+  position: absolute; bottom: 45px; left: 50%; transform: translateX(-50%);
+  max-width: min(640px, calc(100% - 48px)); width: max-content; box-sizing: border-box;
+  padding: 9px 16px; margin: 0; border: 1px solid #ffffffa8; border-radius: 13px;
+  background: #fffdf5ee; box-shadow: var(--life-shadow); text-align: center; font-size: 12px; line-height: 1.65;
 }
 .life-notice:empty { display: none; }
+.life-celebration {
+  position: absolute; top: 128px; right: max(22px, env(safe-area-inset-right));
+  width: min(285px, calc(100% - 44px)); box-sizing: border-box; padding: 17px 20px;
+  border: 1px solid #e4b5c1; border-radius: 18px; background: linear-gradient(135deg, #fffaf5f5, #fff0f2f5);
+  box-shadow: 0 8px 32px #783c5429; animation: life-arrive 400ms ease-out both;
+}
+.life-celebration strong { display: block; margin-top: 5px; font: 600 19px/1.5 'Yu Mincho', 'Hiragino Mincho ProN', serif; color: #874b5e; }
+.life-celebration p { margin: 7px 0 0; font-size: 12px; line-height: 1.8; }
+.life-celebration-kicker { color: #a06272; }
+@keyframes life-arrive { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
 
 .life-dialog {
-  pointer-events: auto;
-  width: min(440px, calc(100% - 72px));
-  max-height: calc(100dvh - 80px);
-  overflow-y: auto;
-  padding: 26px;
-  border: 1px solid #dfd7c6;
-  border-radius: 20px;
-  color: #28473f;
-  background: #fffdf5;
-  box-shadow: 0 15px 80px #182d3a44;
+  pointer-events: auto; box-sizing: border-box; width: min(510px, calc(100% - 36px));
+  max-height: calc(100dvh - 56px); overflow-y: auto; padding: 30px; border: 1px solid #ffffffd9;
+  border-radius: 23px; color: var(--life-ink); background: linear-gradient(145deg, #fffef9, #f9f8ef);
+  box-shadow: 0 25px 100px #163b4659; scrollbar-width: thin; scrollbar-color: #9aa99a transparent;
 }
-.life-dialog::backdrop { background: #1b35444d; }
-.life-dialog h2 { margin: 0 0 16px; font-size: 22px; }
+.life-dialog[open] { animation: life-arrive 180ms ease-out both; }
+.life-dialog::backdrop { background: #18384160; backdrop-filter: blur(4px); }
+.life-dialog .life-dialog-kicker { margin: 0 0 7px; color: #8e6c69; font-size: 11px; letter-spacing: .12em; }
+.life-dialog h2 { margin: 0 0 20px; font: 600 25px/1.4 'Yu Mincho', 'Hiragino Mincho ProN', serif; letter-spacing: .045em; }
+.life-dialog h3 { font-size: 15px; }
 .life-dialog p { line-height: 1.9; }
-.life-dialog small { color: #677367; }
-.life-products { display: grid; gap: 10px; margin: 18px 0; }
-.life-products button { text-align: left; }
-.life-ui .life-close { margin-top: 12px; background: #e5ecdF; }
-.life-request { margin-top: 18px; padding-top: 12px; border-top: 1px solid #dfd7c6; }
-.life-request h3 { margin: 0 0 10px; font-size: 16px; }
+.life-dialog small { color: var(--life-muted); line-height: 1.7; }
+.life-dialog-content > p:first-child { margin-top: 0; }
+.life-dialog-content > button { margin: 6px 7px 6px 0; }
+.life-dialog-content > button:first-of-type { color: #fff; background: var(--life-green); border-color: var(--life-green); }
+.life-dialog-content > button:first-of-type:hover:not(:disabled) { background: #28564a; }
+.life-dialog label { display: flex; align-items: center; gap: 12px; margin: 18px 0; }
+.life-dialog input[type=range] { flex: 1; min-width: 0; accent-color: var(--life-green); }
+.life-dialog input[type=checkbox] { width: 20px; height: 20px; accent-color: var(--life-green); }
+.life-products { display: grid; gap: 10px; margin: 20px 0; }
+.life-products button { text-align: left; padding: 14px 16px; }
+.life-ui .life-close { margin-top: 22px; min-width: 112px; color: #536a5d; border-color: #d5decf; background: #edf1e5; }
+.life-request { margin-top: 20px; padding: 17px 18px; border: 1px solid #e1ddcc; border-radius: 14px; background: #f3f1e5; }
+.life-request:empty { display: none; }
+.life-request h3 { margin: 0 0 10px; font-size: 15px; }
+.life-request p { margin: 8px 0 13px; font-size: 13px; }
+.life-dialog [role=status]:empty { display: none; }
+.life-dialog [role=status]:not(:empty) { padding: 11px 14px; border-left: 3px solid #82a98a; border-radius: 4px 10px 10px 4px; background: #edf2e8; font-size: 13px; }
+.life-memory-album { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 20px 0; }
+.life-memory-card { padding: 17px; border: 1px dashed #c7d1c2; border-radius: 14px; background: #f0f2e9; }
+.life-memory-card.discovered { border: 1px solid #e4c5c8; background: linear-gradient(140deg, #fffdf9, #fff1ed); box-shadow: 0 3px 10px #714d4d08; }
+.life-memory-card > small:first-child { font-size: 10px; color: #7e7766; }
+.life-memory-card.discovered > small:first-child { color: #9b5f70; }
+.life-memory-card h3 { margin: 7px 0; font: 600 17px/1.5 'Yu Mincho', 'Hiragino Mincho ProN', serif; }
+.life-memory-card p { margin: 8px 0; font-size: 12px; }
+.life-memory-date { display: block; font-variant-numeric: tabular-nums; }
 
-.life-dialog-map { width: min(1000px, calc(100% - 72px)); }
+.life-dialog-map { width: min(1030px, calc(100% - 36px)); }
 .life-map-layout { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 20px; align-items: start; }
-.life-map { display: block; width: 100%; border: 1px solid #dfd7c6; border-radius: 12px; }
+.life-map { display: block; width: 100%; border: 1px solid #dfd7c6; border-radius: 14px; }
 .life-map-label { fill: #455e54; font: 28px system-ui, sans-serif; }
 .life-map-number { fill: white; font: bold 29px system-ui, sans-serif; }
 .life-map-places { display: grid; gap: 8px; }
-.life-map-places button { text-align: left; }
-.life-map-places button[aria-pressed="true"] { border: 2px solid #356b59; background: #e7f0df; }
+.life-map-places button { text-align: left; font-size: 12px; }
+.life-map-places button[aria-pressed=true] { border: 2px solid var(--life-green); background: #e7f0df; }
 .life-map-places .life-map-delivery { color: #873e29; }
 
-@media (max-width: 720px) {
-  .life-bar { left: 12px; top: 40px; gap: 5px; font-size: 12px; }
-  .life-brand { display: none; }
-  .life-bar button { padding: 6px 8px; }
-  .life-save-status { width: 100%; text-align: right; background: transparent; }
-  .life-sidebar { top: 128px; width: min(260px, calc(100% - 24px)); max-height: calc(100dvh - 320px); }
-  .life-goal { font-size: 12px; padding: 10px 14px; }
-  #help { white-space: normal; width: calc(100% - 40px); text-align: center; font-size: 11px; }
-  .life-notice { bottom: 70px; font-size: 12px; }
-  .life-ui .life-interact { bottom: 150px; font-size: 12px; }
-  .life-map-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; }
-}
-
-.life-clock { padding: 5px 10px; border-radius: 10px; background: #fffdf5ed; font-size: 12px; }
-.life-dialog > div > button { margin: 6px 8px 6px 0; }
-.life-dialog label { display: flex; align-items: center; gap: 12px; margin: 16px 0; }
-.life-dialog input[type=range] { flex: 1; accent-color: #356b59; }
 .touch-controls { position: fixed; bottom: max(22px, env(safe-area-inset-bottom)); left: max(18px, env(safe-area-inset-left)); display: flex; align-items: end; gap: 14px; user-select: none; z-index: 1; }
 .touch-pad { width: 112px; height: 112px; border: 2px solid #fff9; background: #28473f4d; border-radius: 50%; touch-action: none; display: grid; place-items: center; }
 .touch-knob { display: block; width: 42px; height: 42px; background: #fffdf5d9; border-radius: 50%; pointer-events: none; }
 .touch-controls button { padding: 15px; border: 1px solid #c8d8cb; border-radius: 50%; background: #fffdf5e6; color: #28473f; min-width: 55px; min-height: 55px; }
-.touch-controls button[aria-pressed=true] { color: white; background: #356b59; }
+.touch-controls button[aria-pressed=true] { color: white; background: var(--life-green); }
 body:has(dialog[open]) .touch-controls { visibility: hidden; }
-@media (max-width: 720px) {
-  .life-bar { gap: 4px; }
-  .life-clock { padding: 3px 5px; font-size: 11px; }
-  .life-sidebar { top: 155px; max-height: calc(100dvh - 410px); width: min(240px, calc(100% - 24px)); }
+.life-ui:has(dialog[open]) > :not(dialog) { visibility: hidden; }
+
+@media (max-width: 1000px) and (min-width: 721px) {
+  .life-toolbar { max-width: calc(100% - 290px); }
+  .life-toolbar button { padding: 8px 10px; }
+  .life-identity { min-width: 220px; }
 }
-@media (pointer: coarse) {
-  #help { display: none; }
-  .life-notice { bottom: 170px; }
-  .life-ui .life-interact { bottom: 225px; max-width: calc(100% - 30px); white-space: normal; }
+@media (max-width: 720px) {
+  :root { --life-wayfinder-top: calc(env(safe-area-inset-top, 0px) + 124px); }
+  .life-bar { left: max(12px, env(safe-area-inset-left)); right: max(12px, env(safe-area-inset-right)); top: max(10px, env(safe-area-inset-top)); gap: 7px; }
+  .life-identity { padding: 8px 12px; min-width: 0; width: 100%; box-sizing: border-box; border-radius: 13px; }
+  .life-brand { font-size: 15px; }
+  .life-status { justify-content: space-between; gap: 8px; padding-top: 2px; }
+  .life-toolbar { max-width: none; width: 100%; padding: 3px; gap: 3px; justify-content: center; border-radius: 14px; }
+  .life-toolbar button { flex: 1 0 auto; padding: 8px; font-size: 12px; }
+  .life-save-status { display: none; }
+  .life-sidebar { left: 12px; top: 200px; width: min(265px, calc(100% - 24px)); max-height: calc(100dvh - 450px); gap: 8px; }
+  .life-goal { padding: 12px 14px; }
+  .life-goal strong { font-size: 13px; }
+  .life-goal-progress { margin-top: 9px; }
+  .life-goal ol { margin: 9px 0; }
+  .life-goal li { margin: 5px 0; }
+  .life-goal small { font-size: 10px; }
+  .life-context { padding: 13px 14px; }
+  .life-context h3 { font-size: 17px; }
+  .life-context p { font-size: 12px; margin-bottom: 10px; }
+  .life-context-actions { gap: 5px; }
+  .life-context-actions button { font-size: 11px; }
+  .life-celebration { top: auto; bottom: 290px; left: 50%; right: auto; transform: translateX(-50%); width: min(320px, calc(100% - 24px)); padding: 14px 17px; }
+  .life-notice { bottom: 70px; font-size: 12px; }
+  .life-ui .life-interact { bottom: 150px; font-size: 12px; }
+  .life-map-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .life-dialog { padding: 22px; border-radius: 19px; }
+  .life-dialog h2 { font-size: 23px; }
+  .life-memory-album { grid-template-columns: minmax(0, 1fr); }
+  #help { white-space: normal; width: calc(100% - 40px); text-align: center; font-size: 10px; }
 }
 
-/* Keep the main touch targets reachable in both phone orientations. Other actions remain in Settings. */
+/* Keep the main touch targets reachable; every secondary action also lives in Settings. */
 @media (pointer: coarse) {
+  #help, #hud { display: none; }
   .life-bar .life-secondary { display: none; }
-  .life-bar button, .life-dialog button { min-height: 44px; }
-  .life-ui .life-interact { min-height: 44px; }
-  .life-sidebar { top: 176px; max-height: calc(100dvh - 440px); }
+  .life-toolbar button, .life-dialog button, .life-context button { min-height: 44px; }
+  .life-ui .life-interact { min-height: 44px; bottom: 245px; width: max-content; max-width: calc(100% - 30px); box-sizing: border-box; white-space: normal; }
+  .life-notice { bottom: 160px; }
+  .life-sidebar { max-height: calc(100dvh - 500px); }
+  /* A brief title fits between guidance and controls; the full memory remains in the album. */
+  .life-celebration { padding: 11px 15px; }
+  .life-celebration strong { margin: 0; font-size: 16px; }
+  .life-celebration-kicker, .life-celebration p { display: none; }
+  .life-dialog { font-size: 14px; }
+}
+@media (pointer: coarse) and (max-width: 720px) {
+  .life-brand { display: none; }
+  .life-status { padding: 0; min-height: 22px; }
+  .life-clock, .life-bar strong { font-size: 11px; }
+  .life-sidebar { top: 196px; }
+  .life-celebration { bottom: 330px; }
+  /* One immediate action leaves the person and street visible; the full plan stays in 暮らし. */
+  .life-goal-progress { margin-top: 6px; }
+  .life-goal ol { margin: 6px 0 0; }
+  .life-goal li { margin: 0; }
+  .life-goal li:not(.current), .life-goal ol ~ small { display: none; }
 }
 @media (pointer: coarse) and (max-height: 500px) {
-  .life-bar { top: 6px; left: 8px; right: 8px; font-size: 11px; gap: 4px; }
-  .life-bar button { padding: 5px 8px; }
+  :root { --life-wayfinder-top: calc(env(safe-area-inset-top, 0px) + 78px); }
+  .life-bar { top: max(7px, env(safe-area-inset-top)); left: 12px; right: 12px; flex-wrap: nowrap; gap: 8px; align-items: center; }
+  .life-identity { min-width: 0; width: auto; padding: 8px 12px; flex-shrink: 0; }
+  .life-status { display: block; padding: 0; }
+  .life-clock, .life-bar strong { display: block; font-size: 10px; }
+  .life-toolbar { width: auto; max-width: none; padding: 3px; flex-wrap: nowrap; }
+  .life-toolbar button { padding: 5px 10px; }
   .life-brand, .life-save-status, .life-goal { display: none; }
-  .life-sidebar { top: 60px; left: auto; right: 8px; width: min(300px, 40vw); max-height: calc(100dvh - 200px); }
-  .life-ui .life-interact { bottom: 80px; left: auto; right: 12px; transform: none; max-width: min(300px, 45vw); }
-  .life-notice { bottom: 6px; left: 235px; right: 10px; transform: none; max-width: none; width: auto; font-size: 11px; }
+  .life-sidebar { top: 78px; left: auto; right: 12px; width: min(290px, 34vw); max-height: calc(100dvh - 200px); }
+  .life-context { padding: 10px 12px; }
+  .life-context h3 { font-size: 15px; margin-top: 3px; }
+  .life-context p { font-size: 11px; line-height: 1.6; }
+  .life-context-kicker { display: none; }
+  .life-context-actions button { font-size: 11px; }
+  .life-ui .life-interact { bottom: 80px; left: auto; right: 12px; transform: none; max-width: min(300px, 45vw); padding: 10px 16px; }
+  .life-notice { bottom: 6px; left: 235px; right: 10px; transform: none; max-width: none; width: auto; font-size: 11px; padding: 7px 12px; }
+  .life-celebration { top: auto; bottom: 148px; left: 245px; right: auto; transform: none; width: min(260px, 32vw); padding: 12px 14px; }
+  .life-celebration strong { font-size: 16px; }
+  .life-celebration-kicker { display: none; }
   .touch-controls { bottom: 12px; }
   .touch-pad { width: 96px; height: 96px; }
-  .life-dialog { max-height: calc(100dvh - 32px); padding: 16px; }
+  .life-dialog { max-height: calc(100dvh - 24px); padding: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .life-ui *, .life-ui *::before, .life-ui *::after { animation: none !important; transition: none !important; }
 }

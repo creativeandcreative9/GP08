@@ -1,6 +1,8 @@
 /** Local, versioned progress. No model data or browser objects are stored. */
 import { newLife, readLife, type LifeState } from './calendar';
 import { errandFor, SHOPS, validResident } from './errands';
+import { newJourney, readJourney, type JourneyState } from './journey';
+import { newPreferences, readPreferences, type PlayPreferences } from './preferences';
 
 // Keep the original key so version-1 saves migrate in place without losing progress.
 export const SAVE_KEY = 'gp08.life.v1';
@@ -27,12 +29,14 @@ export interface Progress {
   /** Destination, parcel and reward are derived from this ID, never trusted from saved text. */
   errand: { resident: string } | null;
   completedErrands: string[];
+  journey: JourneyState;
+  preferences: PlayPreferences;
 }
 
 export const newProgress = (): Progress => ({
   version: 3, life: newLife(), money: 1200, inventory: { dango: 0, tea: 0, onigiri: 0, coffee: 0 },
   greeted: [], boughtDango: false, ateDango: false, rewarded: false, position: null,
-  errand: null, completedErrands: [],
+  errand: null, completedErrands: [], journey: newJourney(), preferences: newPreferences(),
 });
 
 const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -64,12 +68,13 @@ export function parseProgress(raw: string | null): Progress | null {
       }
     }
     const life = v.version === 3 ? readLife(v.life) : newLife();
-    if (!life) return null;
+    const journey = readJourney(v.journey), preferences = readPreferences(v.preferences);
+    if (!life || !journey || !preferences || journey.memories.some(m => m.day > life.day)) return null;
     return {
       version: 3, life, money: v.money, inventory: Object.fromEntries(ITEM_IDS.map(id => [id, inventory[id]])) as Progress['inventory'],
       greeted: [...new Set(v.greeted as string[])], boughtDango: v.boughtDango as boolean, ateDango: v.ateDango as boolean,
       rewarded: v.rewarded as boolean, position: v.position as Progress['position'],
-      errand, completedErrands,
+      errand, completedErrands, journey, preferences,
     };
   } catch { return null; }
 }

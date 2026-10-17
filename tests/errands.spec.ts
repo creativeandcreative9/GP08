@@ -96,7 +96,9 @@ test('cancelling returns the parcel without rewards or inventory changes and all
 test('version-1 progress migrates without losing money, items, the first goal or position', () => {
   const old = legacySave();
   const migrated = parseProgress(JSON.stringify(old))!;
-  expect(migrated).toEqual({ ...old, version: 3, life: newProgress().life, errand: null, completedErrands: [] });
+  expect(migrated).toEqual({ ...old, version: 3, life: newProgress().life, errand: null, completedErrands: [],
+    journey: { memories: [] }, preferences: { wayfinding: true, destination: null, nightHintDay: 0 },
+  });
   acceptErrand(migrated, 'resident-1');
   const pending = parseProgress(JSON.stringify(migrated))!;
   expect(pending.errand).toEqual({ resident: 'resident-1' });

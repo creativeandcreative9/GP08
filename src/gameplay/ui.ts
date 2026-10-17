@@ -4,6 +4,7 @@ import { errandFor, residentName, SHOPS } from './errands';
 import type { WorldXZ } from '../town/layout';
 import type { MapPlace } from './map';
 import { townMap } from './map-view';
+import { JOURNEY_IDS } from './journey';
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, text = '', className = ''): HTMLElementTagNameMap[K] => {
   const node = document.createElement(tag);
@@ -24,6 +25,25 @@ export interface UIActions {
   modal(open: boolean): void;
 }
 
+export interface ContextHint {
+  title: string;
+  body: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  secondaryLabel?: string;
+  onSecondary?: () => void;
+}
+
+export interface MemoryCard {
+  id?: string;
+  title: string;
+  body: string;
+  detail?: string;
+  unlocked: boolean;
+  day?: number;
+  minute?: number;
+}
+
 /** DOM-only interface: native dialogs supply focus trapping and Escape support. */
 export class GameUI {
   readonly root = el('section', '', 'life-ui');
@@ -33,27 +53,39 @@ export class GameUI {
   private readonly goal = el('div', '', 'life-goal');
   private readonly navigation = el('p', '', 'life-navigation');
   private readonly restStatus = el('p', '', 'life-rest-status');
+  private readonly context = el('aside', '', 'life-context');
+  private readonly milestone = el('section', '', 'life-celebration');
+  private currentHint: ContextHint | null = null;
+  private hintKey = '';
+  private celebrationTimer: ReturnType<typeof setTimeout> | undefined;
+  private noticeTimer: ReturnType<typeof setTimeout> | undefined;
   private readonly prompt: HTMLButtonElement;
   private readonly notice = el('p', '', 'life-notice');
   private readonly saveStatus = el('span', '自動保存待ち', 'life-save-status');
   private readonly title = el('h2');
-  private readonly content = el('div');
+  private readonly content = el('div', '', 'life-dialog-content');
+  private readonly dialogKicker = el('p', '桜の街の手帳', 'life-dialog-kicker');
   private readonly close: HTMLButtonElement;
 
   constructor(private readonly actions: UIActions) {
     this.root.setAttribute('aria-label', '街歩き');
     const bar = el('div', '', 'life-bar');
+    const identity = el('div', '', 'life-identity');
     const name = el('span', '桜の街で、ひと休み', 'life-brand');
-    bar.append(name, this.clock, this.money);
+    const status = el('div', '', 'life-status');
+    status.append(this.clock, this.money);
+    identity.append(name, status);
+    const toolbar = el('nav', '', 'life-toolbar');
+    toolbar.setAttribute('aria-label', '街歩きのメニュー');
     for (const [label, action, secondary] of [
       ['持ち物 [I]', actions.inventory, false], ['依頼帳 [J]', actions.journal, true], ['地図 [M]', actions.map, false],
-      ['お店案内', actions.guide, true], ['暮らし', actions.life, true], ['設定', actions.settings, false], ['保存', actions.save, true],
+      ['お店案内', actions.guide, true], ['暮らし', actions.life, false], ['設定', actions.settings, false], ['保存', actions.save, true],
     ] as const) {
       const button = this.button(label, action);
       if (secondary) button.classList.add('life-secondary');
-      bar.append(button);
+      toolbar.append(button);
     }
-    bar.append(this.saveStatus);
+    bar.append(identity, toolbar, this.saveStatus);
     this.prompt = this.button('近くの人やお店に話しかける [E]', actions.interact);
     this.prompt.className = 'life-interact';
     this.prompt.disabled = true;
@@ -64,14 +96,22 @@ export class GameUI {
     this.dialog.setAttribute('aria-labelledby', this.title.id);
     this.close = this.button('閉じる [Esc]', () => this.dialog.close());
     this.close.className = 'life-close';
-    this.dialog.append(this.title, this.content, this.close);
+    this.dialog.append(this.dialogKicker, this.title, this.content, this.close);
     this.dialog.addEventListener('close', () => {
       this.actions.modal(false);
       this.prompt.focus({ preventScroll: true });
     });
+    this.context.hidden = true;
+    this.context.setAttribute('aria-label', '街歩きのヒント');
+    this.context.setAttribute('aria-live', 'polite');
+    this.context.setAttribute('aria-atomic', 'true');
+    this.milestone.hidden = true;
+    this.milestone.setAttribute('role', 'status');
+    this.milestone.setAttribute('aria-live', 'polite');
+    this.milestone.setAttribute('aria-atomic', 'true');
     const sidebar = el('div', '', 'life-sidebar');
-    sidebar.append(this.goal, this.navigation, this.restStatus);
-    this.root.append(bar, sidebar, this.prompt, this.notice, this.dialog);
+    sidebar.append(this.context, this.goal, this.navigation, this.restStatus);
+    this.root.append(bar, sidebar, this.milestone, this.prompt, this.notice, this.dialog);
     document.body.append(this.root);
   }
 
@@ -92,13 +132,22 @@ export class GameUI {
     }
     this.goal.replaceChildren(el('strong', p.rewarded ? 'はじめての街歩き 達成！' : 'はじめての街歩き'));
     if (p.rewarded) {
-      this.goal.append(el('p', '住人のおつかいで、お散歩しながらおこづかいを稼ごう。'), el('small', `おつかい完了：${p.completedErrands.length}件 · 依頼帳 [J]`));
+      this.goal.append(el('p', 'ここからは、あなたの歩幅で。気になる景色や住人に会いにいこう。'),
+        el('small', `思い出 ${p.journey.memories.length} / ${JOURNEY_IDS.length} · 暮らしでアルバムを開く`),
+        el('small', `おつかい完了：${p.completedErrands.length}件 · 依頼帳 [J]`));
       return;
     }
+    const completed = Number(p.greeted.length > 0) + Number(p.boughtDango) + Number(p.ateDango);
+    const progress = el('div', '', 'life-goal-progress');
+    progress.setAttribute('aria-label', `街歩きの達成 ${completed} / 3`);
+    for (let i = 0; i < 3; i++) progress.append(el('span', '', i < completed ? 'complete' : ''));
+    this.goal.append(progress);
     const steps = el('ol');
+    let next = true;
     for (const [done, text] of [[p.greeted.length > 0, '住人にあいさつする'], [p.boughtDango, '和菓子屋で三色だんごを買う'], [p.ateDango, '持ち物からだんごを食べる']] as const) {
-      const item = el('li', `${done ? '✓' : '○'} ${text}`);
+      const item = el('li', text);
       if (done) item.className = 'complete';
+      else if (next) { item.className = 'current'; next = false; }
       steps.append(item);
     }
     this.goal.append(steps, el('small', '達成のお祝い：500円 · おつかいは住人に相談'));
@@ -120,12 +169,62 @@ export class GameUI {
   }
 
   navigate(text: string): void { if (this.navigation.textContent !== text) this.navigation.textContent = text; }
-  message(text: string): void { this.notice.textContent = text; }
+  message(text: string, duration = 8000): void {
+    clearTimeout(this.noticeTimer);
+    this.notice.textContent = text;
+    if (text && duration > 0) this.noticeTimer = setTimeout(() => { this.notice.textContent = ''; }, duration);
+  }
   saved(text: string): void { if (this.saveStatus.textContent !== text) this.saveStatus.textContent = text; }
+
+  /** Optional guidance stays beside the world and never takes movement or focus away. */
+  contextHint(hint: ContextHint | null): void {
+    this.currentHint = hint;
+    const key = hint ? JSON.stringify([hint.title, hint.body, hint.actionLabel, hint.secondaryLabel]) : '';
+    if (this.hintKey === key) return;
+    this.hintKey = key;
+    this.context.hidden = !hint;
+    this.context.replaceChildren();
+    if (!hint) return;
+    this.context.append(el('small', 'このあとの過ごし方', 'life-context-kicker'), el('h3', hint.title), el('p', hint.body));
+    const actions = el('div', '', 'life-context-actions');
+    if (hint.actionLabel) {
+      const action = this.button(hint.actionLabel, () => this.currentHint?.onAction?.());
+      action.className = 'life-primary';
+      actions.append(action);
+    }
+    if (hint.secondaryLabel) actions.append(this.button(hint.secondaryLabel, () => this.currentHint?.onSecondary?.()));
+    this.context.append(actions);
+  }
+
+  /** A small memory announcement; the walk carries on underneath it. */
+  celebration(title: string, body: string): void {
+    clearTimeout(this.celebrationTimer);
+    this.milestone.replaceChildren(el('small', 'この街の、ひとつの思い出', 'life-celebration-kicker'), el('strong', title), el('p', body));
+    this.milestone.hidden = false;
+    this.celebrationTimer = setTimeout(() => { this.milestone.hidden = true; }, 7000);
+  }
+
+  /** Can be appended to any journal page without changing its actions or focus. */
+  memoryAlbum(cards: readonly MemoryCard[]): void {
+    const album = el('div', '', 'life-memory-album');
+    for (const card of cards) {
+      const entry = el('article', '', `life-memory-card${card.unlocked ? ' discovered' : ''}`);
+      if (card.id) entry.dataset.memory = card.id;
+      entry.append(el('small', card.unlocked ? '思い出に残りました' : 'これから出会う景色'), el('h3', card.title), el('p', card.body));
+      if (card.unlocked && card.day !== undefined) {
+        const time = card.minute === undefined ? '' : ` ${String(Math.floor(card.minute / 60)).padStart(2, '0')}:${String(Math.floor(card.minute % 60)).padStart(2, '0')}`;
+        entry.append(el('small', `${card.day}日目${time}`, 'life-memory-date'));
+      }
+      if (card.detail) entry.append(el('small', card.detail));
+      album.append(entry);
+    }
+    this.content.append(album);
+  }
 
   private open(title: string): void {
     this.dialog.classList.remove('life-dialog-map');
     this.title.textContent = title;
+    this.dialogKicker.textContent = '桜の街の手帳';
     this.content.replaceChildren();
     this.actions.modal(true);
     if (!this.dialog.open) this.dialog.showModal();
@@ -139,6 +238,7 @@ export class GameUI {
 
   conversation(contact: Contact, again: boolean, result: string, p: Progress, accept: () => ActionResult): void {
     this.open(contact.name);
+    this.dialogKicker.textContent = again ? '顔なじみとの、ひととき' : 'この街で出会ったひと';
     this.content.append(el('p', p.completedErrands.includes(contact.id)
       ? `届けてくれてありがとう。とても助かりました！ ${contact.line}`
       : again ? `また会いましたね。${contact.line}` : contact.line));
@@ -172,6 +272,7 @@ export class GameUI {
 
   shop(contact: Contact, p: Progress, purchase: (id: ItemId) => ActionResult, deliver: () => ActionResult): void {
     this.open(contact.name);
+    this.dialogKicker.textContent = '今日の小さな楽しみ';
     this.content.append(el('p', contact.line));
     const result = el('p');
     result.setAttribute('role', 'status');
@@ -298,5 +399,5 @@ export class GameUI {
     this.close.focus();
   }
 
-  dispose(): void { this.dialog.close(); this.root.remove(); }
+  dispose(): void { clearTimeout(this.celebrationTimer); clearTimeout(this.noticeTimer); this.dialog.close(); this.root.remove(); }
 }

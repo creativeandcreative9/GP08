@@ -3,19 +3,43 @@ import type { Footprint } from '../player/player';
 import { ObstacleGrid } from '../life/obstacles';
 
 interface Node { x: number; z: number; g: number; f: number; parent?: Node }
-/** Small A* search on walkable ground. Every diagonal and final segment is checked against walls. */
-export function walkingRoute(start: WorldXZ, end: WorldXZ, obstacles: readonly Footprint[], ground: (x: number, z: number) => number, land: (x: number, z: number) => boolean = () => true): WorldXZ[] {
-  const step = 14, grid = new ObstacleGrid(obstacles, 64, 4), heap: Node[] = [], best = new Map<string, number>();
-  const key = (x: number, z: number): string => `${x},${z}`;
-  const free = (x: number, z: number): boolean => land(x, z) && !grid.hit(x, z, 4);
+
+export type WalkingSegmentCheck = (from: WorldXZ, to: WorldXZ) => boolean;
+
+function walkingSpace(obstacles: readonly Footprint[], ground: (x: number, z: number) => number, land: (x: number, z: number) => boolean): {
+  free(x: number, z: number): boolean;
+  clear: WalkingSegmentCheck;
+} {
+  const grid = new ObstacleGrid(obstacles, 64, 4);
+  const free = (x: number, z: number): boolean => Number.isFinite(x) && Number.isFinite(z) && land(x, z) && !grid.hit(x, z, 4);
   const clear = (a: WorldXZ, b: WorldXZ): boolean => {
+    if (![a.x, a.z, b.x, b.z].every(Number.isFinite)) return false;
     const count = Math.max(1, Math.ceil(Math.hypot(a.x - b.x, a.z - b.z) / 3)); let y = ground(a.x, a.z);
+    if (!Number.isFinite(y)) return false;
     for (let i = 0; i <= count; i++) {
       const x = a.x + (b.x - a.x) * i / count, z = a.z + (b.z - a.z) * i / count, next = ground(x, z);
-      if (!free(x, z) || Math.abs(next - y) > 2) return false; y = next;
+      if (!free(x, z) || !Number.isFinite(next) || Math.abs(next - y) > 2) return false; y = next;
     }
     return true;
   };
+  return { free, clear };
+}
+
+/**
+ * Cache once per town. Guidance and A* share the player's radius, walkable land,
+ * and step-height checks; reaching a corner alone does not make a shortcut safe.
+ */
+export function createWalkingSegmentCheck(obstacles: readonly Footprint[], ground: (x: number, z: number) => number, land: (x: number, z: number) => boolean = () => true): WalkingSegmentCheck {
+  return walkingSpace(obstacles, ground, land).clear;
+}
+
+/** Small A* search on walkable ground. Every diagonal and final segment is checked against walls. */
+export function walkingRoute(start: WorldXZ, end: WorldXZ, obstacles: readonly Footprint[], ground: (x: number, z: number) => number, land: (x: number, z: number) => boolean = () => true): WorldXZ[] {
+  // Babylon Vector3 exposes x/z as prototype getters: object spread loses them.
+  start = { x: start.x, z: start.z }; end = { x: end.x, z: end.z };
+  const step = 14, heap: Node[] = [], best = new Map<string, number>();
+  const key = (x: number, z: number): string => `${x},${z}`;
+  const { free, clear } = walkingSpace(obstacles, ground, land);
   if (!free(start.x, start.z) || !free(end.x, end.z)) return [];
   if (clear(start, end)) return [{ ...start }, { ...end }];
   const snap = (p: WorldXZ): WorldXZ | undefined => {

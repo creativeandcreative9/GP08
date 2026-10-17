@@ -1,0 +1,78 @@
+.life-wayfinder {
+  position: fixed;
+  z-index: 3;
+  top: var(--life-wayfinder-top, calc(env(safe-area-inset-top, 0px) + 100px));
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 8px 18px 8px 8px;
+  border: 1px solid #fffdf6c9;
+  border-radius: 40px;
+  background: linear-gradient(125deg, #fffdf8f2, #f3f5e9ee);
+  box-shadow: 0 5px 24px #253a4326, inset 0 1px 0 #fff;
+  color: #254c46;
+  font: 12px/1.45 system-ui, sans-serif;
+  transform: translateX(-50%);
+  pointer-events: none;
+  user-select: none;
+}
+
+.life-wayfinder[hidden] { display: none; }
+.life-wayfinder-compass {
+  position: relative;
+  display: grid;
+  place-items: center;
+  flex: 0 0 40px;
+  width: 40px;
+  height: 40px;
+  border: 1px solid #63897a66;
+  border-radius: 50%;
+  background: radial-gradient(circle at 38% 25%, #f8fcf6, #dcecdf);
+  box-shadow: inset 0 0 0 4px #ffffff70;
+}
+.life-wayfinder-compass::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border: 1px dashed #597b6e57;
+  border-radius: 50%;
+}
+.life-wayfinder-needle { display: block; width: 28px; height: 28px; }
+.life-wayfinder-needle svg { display: block; width: 100%; height: 100%; }
+.life-wayfinder-needle path { fill: #376d5c; stroke: #fffdf7; stroke-width: 1.1; stroke-linejoin: round; }
+.life-wayfinder-check { display: none; font-size: 24px; font-weight: 700; color: #376d5c; }
+.life-wayfinder-copy { display: grid; min-width: 0; gap: 1px; }
+.life-wayfinder-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 650; letter-spacing: .035em; }
+.life-wayfinder-detail { color: #4e675e; font-variant-numeric: tabular-nums; }
+.life-wayfinder[data-state='arrived'] { background: linear-gradient(125deg, #fffdf8f7, #e6f0dff2); }
+.life-wayfinder[data-state='arrived'] .life-wayfinder-needle { display: none; }
+.life-wayfinder[data-state='arrived'] .life-wayfinder-check { display: block; }
+
+@media (max-width: 720px) {
+  .life-wayfinder {
+    top: var(--life-wayfinder-top, calc(env(safe-area-inset-top, 0px) + 124px));
+    max-width: min(280px, calc(100vw - 32px));
+    gap: 9px;
+    padding: 6px 14px 6px 6px;
+    font-size: 11px;
+  }
+  .life-wayfinder-compass { flex-basis: 34px; width: 34px; height: 34px; }
+  .life-wayfinder-needle { width: 25px; height: 25px; }
+  .life-wayfinder-title { font-size: 13px; }
+}
+
+@media (max-height: 500px) and (orientation: landscape) {
+  .life-wayfinder {
+    top: var(--life-wayfinder-top, calc(env(safe-area-inset-top, 0px) + 78px));
+    max-width: 200px;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .life-wayfinder { border: 2px solid #254c46; background: #fffdf8; box-shadow: none; }
+  .life-wayfinder-detail { color: #254c46; }
+}

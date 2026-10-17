@@ -11,8 +11,8 @@ import { VertexBuffer } from '@babylonjs/core/Buffers/buffer.js';
 import { type Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import type { GameScene } from '../scene';
 import type { LifeState } from './calendar';
-import { makeRng } from '../town/util';
 import { createPuddles } from './puddles';
+import { EveningAtmosphere } from './evening-atmosphere';
 
 /** Gameplay lighting only; the five reference cameras keep the reproducible spring-afternoon setup. */
 export class Environment {
@@ -22,7 +22,7 @@ export class Environment {
   private readonly puddles: Mesh;
   private readonly sky: Mesh | undefined;
   private readonly colors: number[];
-  private readonly stars: Mesh[] = [];
+  private readonly evening: EveningAtmosphere;
   private readonly lamps: Mesh[] = [];
   private readonly glow: StandardMaterial;
   private readonly base: number[];
@@ -32,6 +32,7 @@ export class Environment {
     this.sky = scene.getMeshByName('sky') as Mesh | undefined;
     this.base = [...(this.sky?.getVerticesData(VertexBuffer.ColorKind) ?? [])];
     this.colors = [...this.base];
+    this.evening = new EveningAtmosphere(scene);
     const texture = new DynamicTexture('rain-drop', { width: 16, height: 64 }, scene, false);
     const g = texture.getContext(); g.clearRect(0, 0, 16, 64); g.fillStyle = '#d8e8ff'; g.fillRect(6, 4, 4, 52); texture.update();
     this.rain = new ParticleSystem('rain', 650, scene);
@@ -45,13 +46,6 @@ export class Environment {
     this.rain.color1 = new Color4(.8, .9, 1, .5); this.rain.color2 = new Color4(.6, .75, .9, .35);
     this.rain.colorDead = new Color4(.6, .75, .9, 0); this.rain.blendMode = ParticleSystem.BLENDMODE_STANDARD;
     this.glow = new StandardMaterial('night-lamp', scene); this.glow.disableLighting = true; this.glow.emissiveColor.set(1, .76, .42);
-    const rng = makeRng(8374);
-    for (let i = 0; i < 36; i++) {
-      const star = MeshBuilder.CreateSphere(`star-${i}`, { diameter: 15 + rng() * 15, segments: 3 }, scene);
-      const a = rng() * Math.PI * 2, e = .25 + rng();
-      star.position.set(Math.cos(a) * 16000 * Math.cos(e), Math.sin(e) * 16000, Math.sin(a) * 16000 * Math.cos(e));
-      star.infiniteDistance = true; star.material = this.glow; star.isPickable = false; star.applyFog = false; star.setEnabled(false); this.stars.push(star);
-    }
     const poolTexture = new DynamicTexture('lamp-pool', { width: 64, height: 64 }, scene, false);
     const context = poolTexture.getContext() as CanvasRenderingContext2D;
     const gradient = context.createRadialGradient(32, 32, 0, 32, 32, 32); gradient.addColorStop(0, '#ffe7ab70'); gradient.addColorStop(1, '#ffe7ab00');
@@ -77,6 +71,7 @@ export class Environment {
     const key = `${Math.floor(life.minute / 3)}-${life.weather}-${indoor}`;
     if (key === this.key) return;
     this.key = key;
+    this.evening.update(life, indoor);
     const h = life.minute / 60;
     const day = Math.max(.04, Math.min(1, Math.sin((h - 6) / 12 * Math.PI) * 1.5));
     const sunset = Math.max(0, 1 - Math.abs(h - 18) / 2) * .65;
@@ -84,10 +79,12 @@ export class Environment {
     const scene = this.game.scene;
     const hemi = scene.getLightByName('hemi') as HemisphericLight;
     const sun = scene.getLightByName('sun') as DirectionalLight;
-    // Lift daytime shade while keeping the original night floor and indoor fill.
+    // Moonlit streets retain enough neutral fill to read faces, paving and the way home.
+    // The lift vanishes before daytime, preserving the spring-afternoon reference palette.
     const skyBoost = Math.max(0, day - .04) / .96;
-    hemi.intensity = indoor ? .95 : .48 + (day * .3 + skyBoost * .12) * overcast;
-    hemi.diffuse = Color3.Lerp(new Color3(.38, .48, .78), new Color3(.8, .86, 1), day);
+    const nightFill = Math.max(0, 1 - day / .45);
+    hemi.intensity = indoor ? .95 : .48 + (day * .3 + skyBoost * .12) * overcast + .12 * nightFill;
+    hemi.diffuse = Color3.Lerp(new Color3(.38 + .2 * nightFill, .48 + .18 * nightFill, .78 + .04 * nightFill), new Color3(.8, .86, 1), day);
     sun.intensity = indoor ? .3 : day * 1.15 * overcast;
     sun.diffuse.set(1, .91 - sunset * .4, .78 - sunset * .4);
     sun.direction.set(-.6, -.12 - day * .5, .55).normalize();
@@ -106,7 +103,6 @@ export class Environment {
     if (glass?.reflectionTexture) glass.reflectionTexture.level = .04 + .24 * day * overcast;
     glass?.emissiveColor.copyFrom(Color3.Lerp(new Color3(.4, .26, .11), new Color3(.06, .08, .1), day));
     const night = day < .2;
-    for (const star of this.stars) star.setEnabled(night && life.weather === 'clear');
     for (const lamp of this.lamps) lamp.setEnabled(night && !indoor);
     for (const material of scene.materials) if (material.name.startsWith('cloudMat') && material instanceof StandardMaterial) material.emissiveColor.set(.18 + .82 * day, .2 + .8 * day, .3 + .7 * day);
   }

@@ -36,9 +36,10 @@ export function mapPlaces(town: Town, shops: readonly Contact[]): MapPlace[] {
 
 export function navigationText(player: WorldXZ & { y: number }, target: MapPlace, town: Pick<Town, 'obstacles'>): string {
   const distance = Math.hypot(target.x - player.x, target.z - player.z);
-  const arrived = target.kind === 'shop'
-    ? inReach(player, { ...target, kind: 'shop', line: '' }, town.obstacles)
+  const arrived = target.kind === 'shop' || target.id === 'home'
+    ? inReach(player, { ...target, kind: target.id === 'home' ? 'home' : 'shop', line: '' }, town.obstacles)
     : distance < 55 && Math.abs(target.y - player.y) < 16;
+  if (arrived && target.id === 'home') return '自宅に到着。入口で E または画面のボタンから入り、朝まで休めます。';
   if (arrived) return target.kind === 'shop'
     ? `${target.name}の店先に到着。E キーで買い物できます。`
     : `${target.name}に到着。ひと休みして景色を楽しもう。`;
