@@ -1,4 +1,7 @@
-import type { MeshBatch } from './batch';
+import { MeshBatch } from './batch';
+import { buildPerson, buildSeated, type Outfit } from '../life/people';
+import { mergeInto } from '../life/geom';
+import { smoothBevels } from './smooth';
 import { hex, type RGB, type V3 } from './util';
 
 /** Axis-aligned-in-local-space box rotated by `yaw` (radians, about +y) around (cx, cz). */
@@ -35,52 +38,42 @@ export interface PersonStyle {
 
 export const SKIN = hex(0xf6d3b8);
 
-/**
- * A simple low-poly standing figure (about 20 units tall, like the player) built from boxes and facets.
- * `yaw` is the direction it faces: 0 = +z (north), pi/2 = +x (east).
- */
+/** Detailed original figures share the town cast's faces, collars, sleeves and bags. */
 export function person(b: MeshBatch, x: number, y: number, z: number, yaw: number, st: PersonStyle, scale = 1): void {
-  const s = scale;
-  const c = Math.cos(yaw);
-  const sn = Math.sin(yaw);
-  const W = (lx: number, lz: number): [number, number] => [x + (lx * c + lz * sn) * s, z + (-lx * sn + lz * c) * s];
-  const box = (lx: number, lz: number, y0: number, y1: number, hx: number, hz: number, col: RGB): void => {
-    const [wx, wz] = W(lx, lz);
-    obox(b, wx, wz, y + y0 * s, y + y1 * s, hx * s, hz * s, yaw, col);
+  const outfit: Outfit = {
+    id: 'station-visitor', build: st.skirt ? 'woman' : 'man', skin: st.skin,
+    hair: { style: st.skirt ? 'bob' : 'short', color: st.hair },
+    top: { color: st.jacket, length: 'short', sleeves: 'long', ...(st.cap ? { shirt: hex(0xf3f2e7), collar: st.cap, tie: hex(0x52688a), trim: hex(0xd9c99b) } : {}) },
+    bottom: { kind: st.skirt ? 'skirt' : 'trousers', color: st.trousers }, shoes: hex(0x343339),
+    ...(st.cap ? { hat: { kind: 'peaked', color: st.cap, band: hex(0xd8bd66) }, gloves: hex(0xf6f5ef) } : {}),
+    ...(st.bag ? { bag: { kind: 'shoulder', color: st.bag } } : {}),
   };
-  // legs and shoes
-  const dy = st.seated ? -3 : 0;
-  const legTop = st.skirt ? 7.4 : 9.6;
-  if (st.seated) {
-    for (const sx of [-1.45, 1.45]) {
-      box(sx, 3.2, 6.4, 8.4, 1.2, 3.4, st.skirt ? st.skin : st.trousers);
-      box(sx, 6.4, 1.2, 6.4, 1.1, 1.2, st.skirt ? st.skin : st.trousers);
-      box(sx, 7.1, 0, 1.2, 1.3, 2, hex(0x2a2a30));
+  let part: MeshBatch;
+  let lift = 0;
+  if (st.seated) { part = buildSeated(outfit, 7); lift = 7; }
+  else {
+    const p = buildPerson(outfit); part = new MeshBatch(); mergeInto(part, p.body, 0, 0, 0);
+    if (st.armsForward) {
+      const angle = -.85, c = Math.cos(angle), sn = Math.sin(angle);
+      for (let i = 0; i < p.arm.pos.length; i += 3) {
+        const yy = p.arm.pos[i + 1]!, zz = p.arm.pos[i + 2]!;
+        p.arm.pos[i + 1] = yy * c - zz * sn; p.arm.pos[i + 2] = yy * sn + zz * c;
+        const ny = p.arm.nor[i + 1]!, nz = p.arm.nor[i + 2]!;
+        p.arm.nor[i + 1] = ny * c - nz * sn; p.arm.nor[i + 2] = ny * sn + nz * c;
+      }
     }
-  } else {
-    for (const sx of [-1.45, 1.45]) {
-      box(sx, 0, 1.2, legTop, 1.2, 1.3, st.skirt ? st.skin : st.trousers);
-      box(sx, 0.5, 0, 1.2, 1.3, 2, hex(0x2a2a30));
+    for (const side of [-1, 1]) {
+      mergeInto(part, p.leg, side * p.dims.hipX, p.hipY, 0);
+      mergeInto(part, p.arm, side * p.shoulderX, p.shoulderY, .1);
     }
   }
-  if (st.skirt) box(0, 0, 6.4 + dy, 10.4 + dy, 3.5, 2.3, st.trousers);
-  // torso, arms
-  box(0, 0, 9.4 + dy, 16.8 + dy, 3.5, 1.9, st.jacket);
-  const fwd = st.armsForward ? 2.2 : 0.3;
-  for (const sx of [-1, 1]) {
-    box(sx * 4.6, fwd * 0.5, 9.6 + dy, 16.4 + dy, 1.1, 1.2 + (st.armsForward ? 1.4 : 0), st.jacket);
-    box(sx * 4.6, fwd, 8.2 + dy, 9.8 + dy, 0.95, 1.0, st.cap ? hex(0xffffff) : st.skin);
+  smoothBevels(part);
+  const c = Math.cos(yaw), sn = Math.sin(yaw);
+  for (let i = 0; i < part.pos.length; i += 3) {
+    const xx = part.pos[i]!, zz = part.pos[i + 2]!;
+    part.pos[i] = (xx * c + zz * sn) * scale; part.pos[i + 1] = (part.pos[i + 1]! + lift) * scale; part.pos[i + 2] = (-xx * sn + zz * c) * scale;
+    const nx = part.nor[i]!, nz = part.nor[i + 2]!;
+    part.nor[i] = nx * c + nz * sn; part.nor[i + 2] = -nx * sn + nz * c;
   }
-  if (st.bag) box(-4.6, -0.8, 7.5 + dy, 12 + dy, 0.9, 2.4, st.bag);
-  // head, hair
-  const [hx, hz] = W(0, 0);
-  b.blob(hx, y + (19.2 + dy) * s, hz, 2.7 * s, 3 * s, 2.7 * s, st.skin, 0.03, 1);
-  const [bx, bz] = W(0, -0.55);
-  b.blob(bx, y + (19.8 + dy) * s, bz, 2.95 * s, 2.9 * s, 2.95 * s, st.hair, 0.05, 2);
-  if (st.cap) {
-    const [cx2, cz2] = W(0, 0.1);
-    b.cylinder(cx2, cz2, y + (21.4 + dy) * s, y + (23.2 + dy) * s, 3.1 * s, 2.9 * s, 8, st.cap);
-    box(0, 2.9, 21.3 + dy, 21.9 + dy, 2.2, 1.7, st.cap);
-    box(0, 0.1, 21.2 + dy, 21.7 + dy, 3.2, 3.2, hex(0xe0c060));
-  }
+  mergeInto(b, part, x, y, z);
 }

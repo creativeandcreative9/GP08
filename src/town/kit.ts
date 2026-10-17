@@ -1,3 +1,8 @@
+import { ellipsoid } from '../life/geom';
+import { foliageCluster } from './leaf';
+import { roundedFoliage } from './topiary';
+import { plantCards } from './greenery';
+import type { CellName } from './leafcells';
 import type { MeshBatch } from './batch';
 import type { Ctx } from './ctx';
 import type { Frame } from './frame';
@@ -87,9 +92,21 @@ export class Kit {
     this.m.cylinder(p[0], p[2], y0, y1, r0, r1, sides, col, cap);
   }
 
+  topiary(u: number, y: number, v: number, rx: number, ry: number, rz: number, col: RGB): void {
+    const p = this.f.pt(u, y, v);
+    roundedFoliage(this.c.topiary?.at(p[0], p[2]) ?? this.m, p[0], p[1], p[2], rx, ry, rz, col);
+  }
+
   blob(u: number, y: number, v: number, rx: number, ry: number, rz: number, col: RGB, jitter = 0.08, seed = 0): void {
     const p = this.f.pt(u, y, v);
-    this.m.blob(p[0], p[1], p[2], rx, ry, rz, col, jitter, seed);
+    if (this.c.foliage && col[1] > col[0] * 1.1 && col[1] > col[2] * 1.1 && rx > 1.5) {
+      const radius = Math.max(rx, rz);
+      foliageCluster(this.c.foliage.at(p[0], p[2]), p[0], p[1], p[2], radius, ry / radius, radius > 6 ? 'camphor' : 'hedgeA', seed % Math.PI);
+    } else this.m.blob(p[0], p[1], p[2], rx, ry, rz, col, jitter, seed);
+  }
+
+  plant(u: number, y: number, v: number, size: number, cell: CellName): void {
+    const p = this.f.pt(u, y, v); plantCards(this.c, p[0], p[1], p[2], size, cell, (u + v) % Math.PI);
   }
 
   /**
@@ -162,6 +179,18 @@ export class Kit {
     }
   }
 
+  /** Rounded display sweets, with baked soft shading and the atlas white texel. */
+  iball(u: number, y: number, v: number, rx: number, ry: number, rz: number, color: RGB): void {
+    const p = this.f.pt(u, y, v), first = this.s.vertexCount;
+    const swap = Math.abs(this.f.fx) === 1;
+    ellipsoid(this.s, p[0], p[1], p[2], swap ? rz : rx, ry, swap ? rx : rz, color, { seg: 8, rings: 4, smooth: true });
+    for (let i = first; i < this.s.vertexCount; i++) {
+      this.s.uvs[i * 2] = this.wuv[0]![0]; this.s.uvs[i * 2 + 1] = this.wuv[0]![1];
+      const shade = .88 + .12 * this.s.nor[i * 3 + 1]!;
+      for (let c = 0; c < 3; c++) this.s.col[i * 4 + c]! *= shade;
+    }
+  }
+
   /** Plain self-lit quad on the plane v = const (an interior wall), facing `dir`. */
   ifa(u0: number, u1: number, y0: number, y1: number, v: number, dir: 1 | -1, col: RGB): void {
     const p = (u: number, y: number): V3 => this.f.pt(u, y, v);
@@ -194,6 +223,19 @@ export class Kit {
     const r = dir > 0 ? v1 : v0;
     const p = (v: number, y: number): V3 => this.f.pt(u, y, v);
     this.s.quad(p(l, y0), p(r, y0), p(r, y1), p(l, y1), tint, this.f.dir(dir, 0, 0), quadUV(uv));
+  }
+
+  /** A curtain or banner attached along its top edge; ordinary signs still use tf/ts. */
+  clothFront(uv: UvRect, u0: number, u1: number, y0: number, y1: number, v: number, dir: 1 | -1): void {
+    if (!this.c.cloth) { this.tf(uv, u0, u1, y0, y1, v, dir); return; }
+    const l = dir > 0 ? u1 : u0, r = dir > 0 ? u0 : u1;
+    this.c.cloth.panel([this.f.pt(l, y0, v), this.f.pt(r, y0, v), this.f.pt(r, y1, v), this.f.pt(l, y1, v)], this.f.dir(0, 0, dir), uv);
+  }
+
+  clothSide(uv: UvRect, v0: number, v1: number, y0: number, y1: number, u: number, dir: 1 | -1): void {
+    if (!this.c.cloth) { this.ts(uv, v0, v1, y0, y1, u, dir); return; }
+    const l = dir > 0 ? v0 : v1, r = dir > 0 ? v1 : v0;
+    this.c.cloth.panel([this.f.pt(u, y0, l), this.f.pt(u, y0, r), this.f.pt(u, y1, r), this.f.pt(u, y1, l)], this.f.dir(dir, 0, 0), uv, dir > 0 ? -1 : 1);
   }
 
   /** Picture on a free quad given by four local points: bottom-left, bottom-right, top-right, top-left as the viewer sees it. */
@@ -248,7 +290,7 @@ export const slice = (uv: UvRect, a: number, b: number): UvRect => ({
 export function nobori(k: Kit, u: number, v: number, key: string, h = 30): void {
   k.cyl(u, v, 0, h, 0.45, 0.4, 5, hex(0x8a8f96));
   k.box(u - 0.3, u + 0.3, h - 1, h, v - 0.3, v + 6.4, hex(0x8a8f96)); // arm
-  k.ts(k.uv(key), v + 0.3, v + 6.1, h - 24, h - 1, u + 0.2, 1);
-  k.ts(k.uv(key), v + 0.3, v + 6.1, h - 24, h - 1, u - 0.2, -1);
+  k.clothSide(k.uv(key), v + 0.3, v + 6.1, h - 24, h - 1, u + 0.2, 1);
+  k.clothSide(k.uv(key), v + 0.3, v + 6.1, h - 24, h - 1, u - 0.2, -1);
 }
 

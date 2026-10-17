@@ -1,8 +1,11 @@
+import { SURF } from '../surface';
+import { detailedBlock } from './block';
 import type { MeshBatch } from './batch';
 import type { Ctx } from './ctx';
 import type { Frame } from './frame';
 import { Kit, nobori } from './kit';
-import { GLASS, GLASS_DARK, parapet, roofSign, rooftopStuff, signOnFace, windowGrid, windowOn } from './parts';
+import { HeightPass, SHOP_HEIGHT_SCALE } from './height-pass';
+import { parapet, roofSign, rooftopStuff, signOnFace, windowOn } from './parts';
 import type { Lot } from './layout';
 import { hex, makeRng, shade, type Rect } from './util';
 
@@ -86,10 +89,10 @@ function awning(b: MeshBatch, f: Frame, hu: number, hv: number, y: number, out: 
     const u0 = -w / 2 + i * sw;
     const u1 = u0 + sw;
     const col = i % 2 ? c1 : c0;
-    b.quad(f.pt(u0, y, hv + 0.5), f.pt(u1, y, hv + 0.5), f.pt(u1, y - 8, hv + out), f.pt(u0, y - 8, hv + out), col, f.dir(0, 1, 0.6));
-    b.quad(f.pt(u0, y - 8, hv + out), f.pt(u1, y - 8, hv + out), f.pt(u1, y - 14.5, hv + out), f.pt(u0, y - 14.5, hv + out), col, f.dir(0, 0, 1));
+    b.quad(f.pt(u0, y, hv + 0.5), f.pt(u1, y, hv + 0.5), f.pt(u1, y - 3.2, hv + out), f.pt(u0, y - 3.2, hv + out), col, f.dir(0, 1, 3.2 / (out - .5)));
+    b.quad(f.pt(u0, y - 3.2, hv + out), f.pt(u1, y - 3.2, hv + out), f.pt(u1, y - 5.2, hv + out), f.pt(u0, y - 5.2, hv + out), col, f.dir(0, 0, 1));
     // underside (darker)
-    b.quad(f.pt(u0, y - 7, hv + 0.5), f.pt(u0, y - 8, hv + out), f.pt(u1, y - 8, hv + out), f.pt(u1, y - 7, hv + 0.5), shade(col, 0.7), f.dir(0, -1, 0));
+    b.quad(f.pt(u0, y - 2.8, hv + 0.5), f.pt(u0, y - 3.2, hv + out), f.pt(u1, y - 3.2, hv + out), f.pt(u1, y - 2.8, hv + 0.5), shade(col, 0.7), f.dir(0, -1, 0));
   }
 }
 
@@ -100,6 +103,7 @@ function awning(b: MeshBatch, f: Frame, hu: number, hv: number, y: number, out: 
  */
 export function addShop(c: Ctx, lot: Lot, rect: Rect, f: Frame, hu: number, hv: number): void {
   const k = new Kit(c, f);
+  const height = new HeightPass(c);
   const b = k.m;
   const st = STYLES[lot.label] ?? { wall: 0xeee6d8, awning: [0x4477aa, 0xffffff] as [number, number], sign: 0x3b4a5a };
   const ins = INSIDE[lot.label] ?? { shelf: 'in:goods', wall: 0xf1ead8 };
@@ -123,6 +127,7 @@ export function addShop(c: Ctx, lot: Lot, rect: Rect, f: Frame, hu: number, hv: 
   const rPosterKey = r();
   const rPosterSide = r();
   const side = rSide < 0.5 ? -1 : 1;
+  const pitched = fl === 2 && (st.tile || lot.label === 'ラーメン') && r() < .65;
 
   const rec = 4.5; // the glass line is set back from the facade
   const pw = 7; // end piers
@@ -135,7 +140,7 @@ export function addShop(c: Ctx, lot: Lot, rect: Rect, f: Frame, hu: number, hv: 
 
   // ---- body: plinth, closed upper storeys or roof slab, hollow ground floor behind the glass -----------------------
   f.box(b, -hu - 0.6, hu + 0.6, 0, 3.5, -hv - 0.6, hv + 0.6, hex(0x9c9a94));
-  if (fl > 1) f.box(b, -hu, hu, gfTop, H, -hv, hv, wall);
+  if (fl > 1) detailedBlock(c, f, -hu, hu, -hv, hv, gfTop, fl - 1, upH, wall, st.tile ? SURF.tile : SURF.siding);
   else f.box(b, -hu, hu, gfTop - 3, gfTop, -hv, hv, wall);
   for (let i = 1; i < fl; i++) {
     const y = gfTop + (i - 1) * upH;
@@ -236,24 +241,6 @@ export function addShop(c: Ctx, lot: Lot, rect: Rect, f: Frame, hu: number, hv: 
     f.facade(b, -hu, hu, gfTop - 9.5, gfTop - 7.5, hv + 0.8, 1, hex(st.band[1]));
   }
 
-  // ---- upper floors: windows on front, back and sides -------------------------------------------------------------
-  for (let i = 1; i < fl; i++) {
-    const y = gfTop + (i - 1) * upH + 8;
-    const sp = 40;
-    const nf = Math.max(1, Math.floor((hu * 2 - 20) / sp));
-    for (let kk = 0; kk < nf; kk++) {
-      const u = -hu + ((kk + 0.5) * 2 * hu) / nf;
-      if (i === 1 && Math.abs(u) < Math.min(hu * 2 - 30, 132) / 2 + 12) continue; // the wall sign sits here
-      windowOn(b, f, hu, hv, 'f', u, y, 20, 20, i % 2 ? GLASS : GLASS_DARK);
-      windowOn(b, f, hu, hv, 'b', u, y, 20, 20);
-    }
-    const ns = Math.max(1, Math.floor((hv * 2 - 20) / sp));
-    for (let kk = 0; kk < ns; kk++) {
-      const v = -hv + ((kk + 0.5) * 2 * hv) / ns;
-      windowOn(b, f, hu, hv, 'l', v, y, 18, 20);
-      windowOn(b, f, hu, hv, 'r', v, y, 18, 20);
-    }
-  }
   // ground-floor side windows
   const nsw = Math.max(1, Math.floor((hv * 2 - 20) / 50));
   for (let kk = 0; kk < nsw; kk++) {
@@ -262,16 +249,21 @@ export function addShop(c: Ctx, lot: Lot, rect: Rect, f: Frame, hu: number, hv: 
     windowOn(b, f, hu, hv, 'r', v, 14, 22, 18);
   }
   // roof
-  parapet(b, f, hu, hv, H, 6, shade(wall, 0.9));
-  rooftopStuff(c, f, hu, hv, H, 3);
-  // signboards: on the wall (2+ floors) and standing on the roof
-  const sw = Math.min(hu * 2 - 24, 190);
-  if (fl >= 2) {
-    const ws = Math.min(hu * 2 - 30, 132);
-    signOnFace(c, f, lot.label, 0, gfTop + 2, ws, ws / 4, hv + 0.9, 1);
-    f.box(b, -ws / 2 - 1.5, ws / 2 + 1.5, gfTop + 0.8, gfTop + 4 + ws / 4, hv, hv + 0.7, hex(0x3c3c44));
-  }
-  roofSign(c, f, lot.label, 0, H + 8, sw, sw / 4, hv - 8, hex(st.sign === 0xffffff ? 0xdde3ea : st.sign));
+  if (pitched) {
+    const rise = Math.min(22, hv * .45), drop = Math.min(3, rise * .15), roof = hex(0x4c585d), trim = hex(0x514d48);
+    f.gable(b, -hu, hu, -hv, hv, H, rise, 'u', 3, roof, wall);
+    for (const v of [-hv - 3, hv + 2.4]) f.box(b, -hu - 3, hu + 3, H - drop - .7, H - drop, v, v + .6, trim);
+    for (const u of [-hu - 3, hu + 2.4]) f.box(b, u, u + .6, H - drop - .7, H - drop, -hv - 3, hv + 3, trim);
+    f.box(b, -hu - 3, hu + 3, H + rise - .2, H + rise + .8, -.75, .75, roof);
+  } else parapet(b, f, hu, hv, H, 6, shade(wall, .9));
+  rooftopStuff(c, f, hu, hv, H, 3, !pitched);
+  // A narrow fascia occupies the spandrel below the upper windows (which start at gfTop+8).
+  // Its 8:1 atlas cell keeps Japanese lettering at a natural height without stretching it.
+  const ws = Math.min(hu * 2 - 24, 56), sh = ws / 8;
+  k.box(-ws / 2 - .45, ws / 2 + .45, gfTop + .4, gfTop + sh + .9, hv + .2, hv + .8, hex(0x55534e));
+  k.tf(k.uv(`fascia:${lot.label}`), -ws / 2, ws / 2, gfTop + .65, gfTop + sh + .65, hv + .85, 1);
+  const sw = Math.min(hu * 2 - 24, 76);
+  if (!pitched) roofSign(c, f, lot.label, 0, H + 5, sw, sw / 4, hv - 8, hex(st.sign === 0xffffff ? 0xdde3ea : st.sign));
 
   // ---- in front: hanging sign, banner, chalkboard, plant ------------------------------------------------------------
   const bladeKey = `v:${lot.label}`;
@@ -305,6 +297,7 @@ export function addShop(c: Ctx, lot: Lot, rect: Rect, f: Frame, hu: number, hv: 
     k.cyl(pu, hv + 3.6, 0, 5.4, 2.8, 3.5, 7, hex(0xc0683f));
     k.blob(pu, 9, hv + 3.6, 3.6, 3.3, 3.6, hex(0x5ea94d), 0.12, pu);
   }
+  height.applyAbove(3.5, SHOP_HEIGHT_SCALE, gfTop);
   c.obstacles.push(rect);
 }
 
@@ -315,9 +308,9 @@ export function addHotel(c: Ctx, lot: Lot, rect: Rect, f: Frame, hu: number, hv:
   const floorH = 36;
   const H = 4 + lot.floors * floorH;
   f.box(b, -hu, hu, 0, 4, -hv, hv, hex(0x9c9a94));
-  f.box(b, -hu, hu, 4, H, -hv, hv, wall);
+  detailedBlock(c, f, -hu, hu, -hv, hv, 4, lot.floors, floorH, wall, SURF.panel);
   for (let i = 1; i < lot.floors; i++) f.box(b, -hu - 0.6, hu + 0.6, 4 + i * floorH - 2, 4 + i * floorH, -hv - 0.6, hv + 0.6, hex(0xc2b08a));
-  windowGrid(b, f, hu, hv, 4, floorH, lot.floors, { w: 18, h: 20, spacing: 34, skipFront: (fl) => fl === 0 });
+
   // entrance
   f.facade(b, -22, 22, 4, 32, hv + 0.7, 1, hex(0x4a5a6a));
   f.facade(b, -20, 20, 5, 30, hv + 1.0, 1, hex(0xbfe0f0));

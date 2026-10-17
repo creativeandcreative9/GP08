@@ -1,8 +1,8 @@
-import type { Scene } from '@babylonjs/core';
+import { type Scene } from '@babylonjs/core/scene.js';
 import type { Rendering } from './render';
 import type { Town } from './town/build';
 import { MeshBatch } from './town/batch';
-import { roadsW } from './town/site';
+import { roadClearance, roadsW } from './town/site';
 import { buildWheel, CAR_KINDS } from './life/carmodels';
 import { Crowd, type CrowdEnv, type Person } from './life/crowd';
 import { buildDog } from './life/animals';
@@ -14,6 +14,17 @@ import { FusedSet, PersonSet, SeatedSet } from './life/personset';
 import { ObstacleGrid } from './life/obstacles';
 import { Prober } from './life/probe';
 import { Traffic, type Car } from './life/traffic';
+import type { Contact } from './gameplay/world';
+import { schedule } from './gameplay/calendar';
+import { residentName } from './gameplay/errands';
+import { ContactShadows } from './contact-shadows';
+import { DEC3_Y } from './town/ctx';
+
+export interface TownLife {
+  contacts(): Contact[];
+  talkTo(id: string | null): void;
+  setTime(minute: number): void;
+}
 
 /** Height of the asphalt above the terrain (the road decal layer) */
 const ROAD_Y = 0.45;
@@ -34,7 +45,7 @@ interface CarSet {
  * Everything is drawn with a few template meshes and thin instances; the simulation runs before every frame.
  * `?life=off` leaves them out (to compare), `?lifeshow=cars|people` shows the models up close (see gallery.ts).
  */
-export function createLife(scene: Scene, town: Town, rendering: Rendering): void {
+export function createLife(scene: Scene, town: Town, rendering: Rendering): TownLife | undefined {
   const q = new URLSearchParams(location.search);
   const show = q.get('lifeshow');
   if (show === 'cars') {
@@ -50,13 +61,19 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
   const t0 = performance.now();
   const engine = scene.getEngine();
   const mat = lifeMaterial(scene);
+  const carMat = lifeMaterial(scene, true);
   const height = (x: number, z: number): number => town.heightAt(x, z);
 
   // ---------------------------------------------------------------------------------------------- cars
   const traffic = new Traffic();
   // the pink two-tone classic of the references: parked by the convenience store and by the cherry avenue, and on the move
   const conbini = town.spots['w-conbini'];
-  if (conbini) traffic.parkNear('main-street', conbini.x + conbini.fx * conbini.hv, conbini.z + conbini.fz * conbini.hv + 150, 2, 0);
+  if (conbini) {
+    const x = conbini.x + conbini.fx * conbini.hv, z = conbini.z + conbini.fz * conbini.hv;
+    const road = roadClearance(x, z).road;
+    const distance = Math.hypot(x, z - 600) || 1;
+    if (road) traffic.parkNear(road.id, x - x / distance * 100, z + (600 - z) / distance * 100, 2, 0);
+  }
   const mountain = roadsW.find((r) => r.id === 'mountain-street');
   if (mountain) {
     const a = mountain.pts[0]!;
@@ -65,7 +82,7 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
     const dx = (b.x - a.x) / l;
     const dz = (b.z - a.z) / l;
     const hw = mountain.width / 2;
-    traffic.parkNear('mountain-street', a.x + dx * 600 - dz * (hw - 10), a.z + dz * 600 + dx * (hw - 10), 2, 0);
+    traffic.parkNear('mountain-street', a.x + dx * 550 + dz * (hw - 10), a.z + dz * 550 - dx * (hw - 10), 2, 0);
   }
   const mover = traffic.routes.find((r) => r.id === 'main-street')?.cars[0];
   if (mover) traffic.retarget(mover, 2, 0);
@@ -86,7 +103,7 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
     const kind = CAR_KINDS[k]!;
     const b = new MeshBatch();
     kind.build(b, kind.palettes[p]!);
-    const inst = new Instances(`life_car_${kind.id}_${p}`, b, mat, scene, n);
+    const inst = new Instances(`life_car_${kind.id}_${p}`, b, carMat, scene, n);
     rendering.addShadowCaster(inst.mesh);
     carSets.set(key, { body: inst, moving: movingKeys.has(key) });
   }
@@ -94,11 +111,13 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
   buildWheel(wheelBatch);
   const wheels = new Instances('life_wheels', wheelBatch, mat, scene, wheelTotal * 4);
   rendering.addShadowCaster(wheels.mesh);
+  const carContacts = new ContactShadows('life_contact_cars', scene, traffic.cars.length, rendering);
   const writeCar = (c: Car): void => {
     const kind = CAR_KINDS[c.kind]!;
     const body = carSets.get(`${c.kind}:${c.pal}`)!.body;
     const y = height(c.x, c.z) + ROAD_Y;
     setPose(body.data, c.slot * 16, c.x, y, c.z, c.yaw);
+    carContacts.set(c.wslot, c.x, height(c.x, c.z) + DEC3_Y + .03, c.z, c.yaw, kind.width * .56, kind.length * .48);
     // the four wheels (no temporary arrays: this runs for every moving car on every frame)
     const o = c.wslot * 64;
     const wd = wheels.data;
@@ -110,12 +129,14 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
     setPart(wd, o + 48, c.x, y, c.z, c.yaw, 1, wx, wr, kind.axle.rear, c.spin);
   };
   const hideCar = (c: Car): void => {
+    carContacts.hide(c.wslot);
     hideInstance(carSets.get(`${c.kind}:${c.pal}`)!.body.data, c.slot * 16);
     for (let w = 0; w < 4; w++) hideInstance(wheels.data, (c.wslot * 4 + w) * 16);
   };
   for (const c of traffic.cars) writeCar(c);
   for (const s of carSets.values()) s.body.upload();
   wheels.upload();
+  carContacts.upload();
 
   // ---------------------------------------------------------------------------------------------- people
   // the cast: the walking outfits, then the staff (one fused mesh each), then the dog
@@ -171,14 +192,19 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
     const [o, h] = key.split(':').map(Number) as [number, number];
     seatedSets.set(key, new SeatedSet(scene, mat, rendering, OUTFITS[o]!, h, n));
   }
+  const personContacts = new ContactShadows('life_contact_people', scene, crowd.people.length, rendering);
+  const contactSlots = new Map(crowd.people.map((p, i) => [p, i]));
   const writePerson = (p: Person): void => {
     const y = height(p.x, p.z) + p.surface;
+    const floorY = Math.max(height(p.x, p.z) + DEC3_Y + .03, y - (p.mode === 'sit' ? p.seatH : 0));
+    personContacts.set(contactSlots.get(p)!, p.x, floorY, p.z, p.yaw, (p.animal ? 2.8 : 4.8) * p.k, (p.animal ? 4.4 : 3.6) * p.k);
     if (p.mode === 'sit') seatedSets.get(`${p.outfit}:${p.seatH}`)!.write(p.slot, p.x, y, p.z, p.yaw, p.k);
     else if (p.animal) fusedSets[p.outfit]!.gait(p.slot, p.x, y, p.z, p.yaw, p.k, p.phase * DOG_STRIDE, p.swing);
     else if (p.outfit >= staffFirst) fusedSets[p.outfit]!.write(p.slot, p.x, y, p.z, p.yaw, p.k);
     else personSets[p.outfit]!.write(p.slot, p.x, y, p.z, p.yaw, p.k, p.phase, p.mode === 'walk' ? p.swing : 0);
   };
   const hidePerson = (p: Person): void => {
+    personContacts.hide(contactSlots.get(p)!);
     p.hidden = true;
     if (p.mode === 'sit') seatedSets.get(`${p.outfit}:${p.seatH}`)!.hide(p.slot);
     else if (p.outfit >= staffFirst) fusedSets[p.outfit]!.hide(p.slot);
@@ -188,30 +214,49 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
   for (const s of personSets) s?.upload();
   for (const s of fusedSets) s?.upload();
   for (const s of seatedSets.values()) s.upload();
+  personContacts.upload();
 
-  mat.freeze();
+  mat.freeze(); carMat.freeze();
+  // Rooms hide the outdoor town, including its cast. Keep the playable avatar outside this hierarchy.
+  for (const mesh of scene.meshes) if (mesh.name.startsWith('life_')) mesh.parent = town.root;
 
   // ---------------------------------------------------------------------------------------------- every frame
   const driving = traffic.cars.filter((c) => !c.parked);
   const movingSets = [...carSets.values()].filter((s) => s.moving);
   const mobile = crowd.people.filter((p) => p.mode !== 'sit');
+  let speakingTo: Person | undefined;
+  let minute = 14 * 60;
+  const present = (p: Person, i: number): boolean => p.staff || schedule(minute, i).outside;
+  const hideForSchedule = (p: Person): void => { const hidden = p.hidden; hidePerson(p); p.hidden = hidden; };
   scene.onBeforeRenderObservable.add(() => {
     const dt = Math.min(0.1, engine.getDeltaTime() / 1000);
     traffic.update(dt);
     for (const c of driving) if (!c.hidden) writeCar(c);
     for (const s of movingSets) s.body.upload();
     wheels.upload();
-    crowd.update(dt);
-    for (const p of mobile) if (!p.hidden) writePerson(p);
+    crowd.update(dt * schedule(minute, 0).pace);
+    for (const [i, p] of crowd.people.entries()) {
+      if (p.hidden) continue;
+      if (!present(p, i)) hideForSchedule(p);
+      else writePerson(p);
+    }
+    for (const s of seatedSets.values()) s.upload();
     for (const s of personSets) s?.upload();
     for (const s of fusedSets) s?.upload();
+    personContacts.upload(); carContacts.upload();
   });
 
   // Whatever stands right in front of the lens only hides the picture: on the first frame (the camera has been put in
   // place by then) people and parked cars next to the eye or in the middle of the view are taken away.
   scene.onBeforeRenderObservable.addOnce(() => {
+    // Clearing the lens is only a presentation aid for fixed inspection cameras.
+    // Playable residents must remain present when progress and errands are resumed.
+    if (!q.has('view')) return;
     const cam = scene.activeCamera;
     if (!cam) return;
+    // The first onBeforeRender runs before the camera's normal matrix update.
+    // Read the chosen inspection position, rather than the previous frame's global origin.
+    cam.getViewMatrix(true);
     const ex = cam.globalPosition.x;
     const ez = cam.globalPosition.z;
     const fwd = cam.getForwardRay(1).direction;
@@ -228,7 +273,7 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
     let removed = 0;
     for (const p of crowd.people) {
       if (p.hidden) continue;
-      const near = p.staff ? Math.hypot(p.x - ex, p.z - ez) < 10 : inView(p.x, p.z, 44, 0.42);
+      const near = p.staff ? Math.hypot(p.x - ex, p.z - ez) < 10 : inView(p.x, p.z, 20, 0.42);
       if (near) {
         hidePerson(p);
         removed++;
@@ -243,7 +288,11 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
     }
     for (const c of traffic.cars) {
       if (c.hidden) continue;
-      if (inView(c.x, c.z, c.parked ? 52 : 40, 0.3)) {
+      const kind = CAR_KINDS[c.kind]!, dx = ex - c.x, dz = ez - c.z;
+      const lateral = Math.abs(dx * Math.cos(c.yaw) - dz * Math.sin(c.yaw));
+      const longitudinal = Math.abs(dx * Math.sin(c.yaw) + dz * Math.cos(c.yaw));
+      const bodyDistance = Math.hypot(Math.max(0, lateral - kind.width / 2), Math.max(0, longitudinal - kind.length / 2));
+      if (bodyDistance < 45 || inView(c.x, c.z, 18, 0.3)) {
         traffic.remove(c);
         hideCar(c);
         removed++;
@@ -254,12 +303,13 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
     for (const s of seatedSets.values()) s.upload();
     for (const s of carSets.values()) s.body.upload();
     wheels.upload();
+    personContacts.upload(); carContacts.upload();
     if (removed > 0) console.info(`[life] cleared ${removed} people / cars from the camera's way`);
   });
 
   // ---------------------------------------------------------------------------------------------- report and test hooks
-  let verts = wheels.vertexCount;
-  let meshes = 1;
+  let verts = wheels.vertexCount + carContacts.mesh.getTotalVertices() + personContacts.mesh.getTotalVertices();
+  let meshes = 3;
   for (const s of carSets.values()) (verts += s.body.vertexCount), meshes++;
   for (const s of personSets) if (s) (verts += s.vertexCount), (meshes += s.meshes().length);
   for (const s of fusedSets) if (s) (verts += s.body.vertexCount), meshes++;
@@ -305,6 +355,25 @@ export function createLife(scene: Scene, town: Town, rendering: Rendering): void
         cars: driving.filter((c) => !c.hidden).map((c) => [c.x, c.z]),
         walkers: mobile.filter((p) => p.mode === 'walk' && !p.hidden).map((p) => [p.x, p.z]),
       }),
+    },
+  };
+  const lines = [
+    'こんにちは。この街は初めて？ 和菓子屋の三色だんご、おすすめですよ。お店案内から場所が分かります。',
+    '桜がきれいですね。海は駅の向こうの北側、展望台は南西の山の上にあります。',
+    'お散歩日和ですね。買ったものは「持ち物」から食べたり飲んだりできますよ。',
+    'こんにちは！ カフェのコーヒーを持って、公園でひと休みするのが好きなんです。',
+    'この公園はお気に入りの場所です。急がなくても大丈夫。ゆっくり街を歩いていってね。',
+  ];
+  return {
+    contacts: () => crowd.people.flatMap((p, i) => p.hidden || p.animal || p.staff || !present(p, i) ? [] : [{
+      id: `resident-${i}`, name: residentName(`resident-${i}`), line: `${schedule(minute, i).activity}の途中です。${lines[i % lines.length]!}`,
+      x: p.x, z: p.z, y: height(p.x, p.z) + p.surface, kind: 'resident' as const,
+    }]),
+    setTime: value => { minute = value; crowd.setTime(value); },
+    talkTo: id => {
+      if (speakingTo) speakingTo.talking = false;
+      speakingTo = id ? crowd.people[Number(id.replace('resident-', ''))] : undefined;
+      if (speakingTo) speakingTo.talking = true;
     },
   };
 }

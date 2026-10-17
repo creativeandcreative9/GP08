@@ -1,4 +1,11 @@
-import { Color3, StandardMaterial, type Mesh, type Scene } from '@babylonjs/core';
+import { applyDiffuseLighting } from '../diffuse-lighting';
+// Thin-instance APIs are registered separately from Mesh in the modular Babylon runtime.
+import '@babylonjs/core/Meshes/thinInstanceMesh.js';
+import { Color3 } from '@babylonjs/core/Maths/math.color.js';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { type Mesh } from '@babylonjs/core/Meshes/mesh.js';
+import { type Scene } from '@babylonjs/core/scene.js';
+import { smoothBevels } from '../town/smooth';
 import type { MeshBatch } from '../town/batch';
 
 /**
@@ -61,12 +68,19 @@ export function hideInstance(d: Float32Array, o: number): void {
 }
 
 /** The material of the cars and people: vertex colours, lit like the town (flat shaded, two-sided). */
-export function lifeMaterial(scene: Scene): StandardMaterial {
-  const m = new StandardMaterial('lifeMat', scene);
+export function lifeMaterial(scene: Scene, car = false): StandardMaterial {
+  const m = new StandardMaterial(car ? 'carMat' : 'lifeMat', scene);
   m.diffuseColor = Color3.White();
-  m.specularColor = Color3.Black();
+  m.specularColor = car ? new Color3(.3, .32, .35) : Color3.Black();
+  if (car) {
+    m.specularPower = 90;
+    const windows = scene.getMaterialByName('glassMat') as StandardMaterial | null;
+    m.reflectionTexture = windows?.reflectionTexture ?? null;
+    if (windows?.reflectionFresnelParameters) m.reflectionFresnelParameters = windows.reflectionFresnelParameters;
+  }
   m.backFaceCulling = false;
   m.twoSidedLighting = true;
+  applyDiffuseLighting(m);
   return m;
 }
 
@@ -82,6 +96,7 @@ export class Instances {
     scene: Scene,
     readonly capacity: number,
   ) {
+    smoothBevels(batch);
     this.mesh = batch.toMesh(name, scene, material);
     this.data = new Float32Array(Math.max(1, capacity) * 16);
     for (let i = 0; i < capacity; i++) hideInstance(this.data, i * 16);

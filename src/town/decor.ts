@@ -263,11 +263,12 @@ function paintHidamari(g: G, w: number, h: number): void {
   g.arc(sx, sy, 27, 0, Math.PI * 2);
   g.fillStyle = '#ffc93c';
   g.fill();
-  txt(g, 'ひだまりマート', 308, h / 2 - 3, 74, '#11883f', { stroke: '#ffffff', sw: 3, maxW: 400 });
+  txt(g, 'HIDAMARI MART', 308, 25, 18, '#237a65', { maxW: 376 });
+  txt(g, 'ひだまりマート', 308, 73, 64, '#11883f', { stroke: '#ffffff', sw: 3, maxW: 376 });
   // bottom stripes
   g.fillStyle = '#11883f';
   g.fillRect(0, h - 15, w, 8);
-  g.fillStyle = '#1779c4';
+  g.fillStyle = '#237a65';
   g.fillRect(0, h - 7, w, 7);
   g.fillStyle = '#11883f';
   g.fillRect(0, 0, w, 6);
@@ -957,4 +958,9 @@ export const EXTRAS: readonly ExtraCell[] = [
   { key: 'deck', w: 256, h: 128, paint: paintDeck },
   { key: 'floor:wood', w: 256, h: 128, paint: paintFloorWood },
   { key: 'floor:tile', w: 128, h: 128, paint: paintTileFloor },
+  { key: 'awning:cafe', w: 512, h: 128, paint: (g, w, h) => {
+    g.fillStyle = '#8b3445'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = '#d8a8a6'; g.lineWidth = 2; g.strokeRect(0, 12, w, h - 24);
+    txt(g, 'Café Haruiro', w * .5, 82, 64, '#f7e9d2', { font: SERIF, weight: 'italic bold', maxW: w - 40 });
+  } },
 ];

@@ -1,4 +1,9 @@
-import { DynamicTexture, Material, StandardMaterial, Texture, Color3, type Scene } from '@babylonjs/core';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
+import { Material } from '@babylonjs/core/Materials/material.js';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture.js';
+import { Color3 } from '@babylonjs/core/Maths/math.color.js';
+import { type Scene } from '@babylonjs/core/scene.js';
 import { EXTRAS, paintTallText, type ExtraCell } from './decor';
 import { STREET_SIGN_STYLES } from './streetsigns';
 
@@ -91,10 +96,36 @@ export const VERTICAL: Readonly<Record<string, string>> = {
   本屋: '書店',
 };
 
+/** Original neighbourhood names for the small fascia boards; gameplay uses the existing shop labels. */
+const FASCIA: Readonly<Record<string, string>> = {
+  レストラン: '洋食キッチン 春灯', カフェ: '珈琲 こもれび', コンビニ: 'コンビニ さくら',
+  花屋: '花と緑 こはる', 本屋: 'ひより書房', ラーメン: 'らーめん 月灯',
+  カラオケ: 'カラオケ こだま', 洋服屋: '洋品店 つむぎ', 和菓子屋: '御菓子処 春霞',
+  すし: '寿司 しおさい', スーパー: 'さくら食品館', ごはん屋: 'ごはん処 いろは',
+  美容室: '美容室 ひなた', 薬局: 'はなみずき薬局', 居酒屋: '酒処 こもれび',
+  八百屋: '八百屋 みどり', クリーニング: 'さくらクリーニング', 理容室: '理容 あおば',
+  焼肉: '炭火焼肉 春灯', パン屋: 'パン工房 こむぎ', 医院: 'さくら内科医院',
+  歯科: 'あおば歯科', 学習塾: '学習教室 あゆみ', 酒屋: '酒と食料品 こはる', 定食屋: 'お食事処 こまち',
+};
+const SERIF_SHOPS = new Set(['レストラン', 'カフェ', '和菓子屋', 'すし', 'ごはん屋', '居酒屋', '焼肉', '酒屋', '定食屋', '本屋']);
+
+function paintFascia(g: CanvasRenderingContext2D, w: number, h: number, label: string): void {
+  const style = STYLES[label] ?? DEFAULT_STYLE, text = FASCIA[label] ?? label;
+  g.fillStyle = style.bg; g.fillRect(0, 0, w, h);
+  g.fillStyle = style.accent ?? style.fg; g.fillRect(0, 0, w, 2); g.fillRect(0, h - 2, w, 2);
+  g.strokeStyle = style.fg; g.globalAlpha = .35; g.lineWidth = 1;
+  g.strokeRect(5.5, 5.5, w - 11, h - 11); g.globalAlpha = 1;
+  const font = SERIF_SHOPS.has(label) ? "'Noto Serif CJK JP', 'Yu Mincho', serif" : FONT_STACK;
+  g.font = `600 36px ${font}`;
+  const size = Math.min(36, 36 * (w - 40) / Math.max(1, g.measureText(text).width));
+  g.font = `600 ${size}px ${font}`; g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = style.fg; g.fillText(text, w / 2, h / 2 + 1);
+}
+
 const CELL_W = 512;
 const CELL_H = 128;
-const COLS = 4;
-const ROWS = 32; // the minimum: the atlas grows by whole rows when more is asked for
+const COLS = 8;
+const ROWS = 16; // the minimum: the atlas grows by whole rows when more is asked for
 /** Rows of the atlas that was built last (quadUV needs it for the half-texel inset). */
 let atlasRows = ROWS;
 
@@ -141,13 +172,16 @@ export class SignAtlas {
 
   constructor(scene: Scene, labels: readonly string[]) {
     const W = CELL_W * COLS;
+    const fasciaLabels = [...new Set(labels)].filter(label => FASCIA[label] !== undefined);
     // the cells needed (plus slack for the multi-cell pictures) decide how many rows the atlas has
     const need =
       new Set(labels).size +
       EXTRAS.reduce((n, x) => n + Math.ceil((x.tall ? x.h : x.w) / CELL_W) * Math.ceil((x.tall ? x.w : x.h) / CELL_H), 0) +
-      Object.keys(VERTICAL).length * 2 +
+      Object.keys(VERTICAL).length +
+      fasciaLabels.length +
       1;
-    const rows = Math.max(ROWS, Math.ceil(need / COLS) + 4);
+    const rows = Math.max(ROWS, Math.ceil(need / COLS) + 3);
+    if (rows > 32) throw new Error('sign atlas exceeds the 4096px texture budget');
     atlasRows = rows;
     const H = CELL_H * rows;
     this.texture = new DynamicTexture('signAtlas', { width: W, height: H }, scene, true, Texture.TRILINEAR_SAMPLINGMODE);
@@ -165,6 +199,7 @@ export class SignAtlas {
         tall: true,
         paint: (g, w, h) => paintTallText(g, w, h, text, STYLES[label] ?? DEFAULT_STYLE),
       })),
+      ...fasciaLabels.map((label): ExtraCell => ({ key: `fascia:${label}`, w: 512, h: 64, paint: (g, w, h) => paintFascia(g, w, h, label) })),
     ];
     const extraKeys = new Set(extras.map((x) => x.key));
     const unique = [...new Set(labels)].filter((l) => !extraKeys.has(l));

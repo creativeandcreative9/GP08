@@ -171,11 +171,14 @@ try {
   const report = [];
   page.on('console', (m) => {
     if (m.text().startsWith('[town]')) report.push(m.text());
+    if (m.type() === 'error') { failed = true; console.error(`[console] ${m.text()}`); }
   });
   const ours = {};
   for (const v of views) {
     await page.goto(`http://127.0.0.1:${port}/?model=none&view=${v}${extra}`, { timeout: 300000 });
     await page.waitForFunction(() => window.__gp08 && window.__gp08.ready === true, null, { timeout: 600000 });
+    const errors = await page.evaluate(() => window.__gp08.errors);
+    if (errors.length) throw new Error(`${v}: ${errors.join('\n')}`);
     await page.addStyleTag({ content: '#hud, #help { display: none !important; }' });
     await page.waitForTimeout(wait);
     // the software renderer can take seconds per frame: stop the loop so the page is idle for the capture

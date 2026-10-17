@@ -1,4 +1,7 @@
-import { Ray, Vector3, type AbstractMesh, type Scene } from '@babylonjs/core';
+import { Ray } from '@babylonjs/core/Culling/ray.js';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { type AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.js';
+import { type Scene } from '@babylonjs/core/scene.js';
 
 /**
  * Looks at the real town geometry (a vertical ray against the town's meshes) so that people can be put on the
@@ -7,7 +10,7 @@ import { Ray, Vector3, type AbstractMesh, type Scene } from '@babylonjs/core';
  */
 
 /** Meshes a probe must not hit: the sky, the sea, clouds, glass panes and everything this module draws itself */
-const SKIP = /^(sky|sea|clouds?\d*|farMountains|glass|life|gal_|lifeGallery|petal)/;
+const SKIP = /^(sky|sea|clouds?\d*|farMountains|foliage|glass|window-light|life|gal_|lifeGallery|petal)/;
 
 const useful = (m: AbstractMesh): boolean => m.isEnabled() && m.isVisible && !SKIP.test(m.name);
 

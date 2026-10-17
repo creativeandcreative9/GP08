@@ -1,18 +1,15 @@
-import {
-  CascadedShadowGenerator,
-  Color3,
-  Color4,
-  ColorCurves,
-  DefaultRenderingPipeline,
-  ImageProcessingConfiguration,
-  SSAO2RenderingPipeline,
-  ShadowGenerator,
-  type AbstractEngine,
-  type AbstractMesh,
-  type Camera,
-  type DirectionalLight,
-  type Scene,
-} from '@babylonjs/core';
+import { CascadedShadowGenerator } from '@babylonjs/core/Lights/Shadows/cascadedShadowGenerator.js';
+import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
+import { ColorCurves } from '@babylonjs/core/Materials/colorCurves.js';
+import { DefaultRenderingPipeline } from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline.js';
+import { ImageProcessingConfiguration } from '@babylonjs/core/Materials/imageProcessingConfiguration.js';
+import { SSAO2RenderingPipeline } from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/ssao2RenderingPipeline.js';
+import { ShadowGenerator } from '@babylonjs/core/Lights/Shadows/shadowGenerator.js';
+import { type AbstractEngine } from '@babylonjs/core/Engines/abstractEngine.js';
+import { type AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.js';
+import { type Camera } from '@babylonjs/core/Cameras/camera.js';
+import { type DirectionalLight } from '@babylonjs/core/Lights/directionalLight.js';
+import { type Scene } from '@babylonjs/core/scene.js';
 
 /**
  * `?gfx=low` turns off sun shadows and post-processing (for slow machines), `?gfx=high` forces them on.
@@ -23,6 +20,7 @@ export type Quality = 'low' | 'high';
 export function quality(engine: AbstractEngine): Quality {
   const p = new URLSearchParams(location.search).get('gfx');
   if (p === 'low' || p === 'high') return p;
+  if (navigator.maxTouchPoints > 0 && matchMedia('(pointer: coarse)').matches) return 'low';
   const info = (engine as { getInfo?: () => { renderer: string } }).getInfo?.();
   return /swiftshader|llvmpipe|software/i.test(info?.renderer ?? '') ? 'low' : 'high';
 }
@@ -31,6 +29,7 @@ export interface Rendering {
   quality: Quality;
   /** Lets a mesh (e.g. the player model) cast sun shadows. */
   addShadowCaster(mesh: AbstractMesh): void;
+  downgrade?(): void;
 }
 
 /**
@@ -53,9 +52,12 @@ export function setupRendering(
   // Khronos PBR Neutral keeps hues and pastel saturation (ACES darkens and shifts them)
   ip.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
   ip.exposure = 1.05;
-  ip.contrast = 1.05;
+  ip.contrast = 1.02;
 
-  if (q === 'low') return { quality: q, addShadowCaster: () => {} };
+  if (q === 'low') {
+    scene.getEngine().setHardwareScalingLevel(1.5);
+    return { quality: q, addShadowCaster: () => {} };
+  }
 
   const csm = new CascadedShadowGenerator(2048, sun);
   csm.numCascades = 3;
@@ -63,21 +65,33 @@ export function setupRendering(
   csm.lambda = 0.9;
   csm.stabilizeCascades = true;
   csm.cascadeBlendPercentage = 0.1;
-  csm.usePercentageCloserFiltering = true;
+  csm.useContactHardeningShadow = true;
+  csm.contactHardeningLightSizeUVRatio = .012;
   csm.filteringQuality = ShadowGenerator.QUALITY_MEDIUM;
-  csm.bias = 0.0015;
+  // Keep thin eaves and window frames attached to their shadows at street scale.
+  csm.bias = 0.0006;
   csm.normalBias = 0.012;
   csm.depthClamp = true;
   csm.transparencyShadow = false;
+  // Curved models need more normal offset than thin town beams and window frames.
+  const movingCasters = new WeakSet<AbstractMesh>();
+  let casterNormalBias: number | undefined;
+  csm.onBeforeShadowMapRenderMeshObservable.add(mesh => {
+    casterNormalBias = movingCasters.has(mesh) ? .14 : mesh.metadata?.shadowNormalBias;
+  });
+  csm.onBeforeShadowMapRenderObservable.add(effect => {
+    if (typeof casterNormalBias === 'number') effect.setFloat3('biasAndScaleSM', csm.bias, casterNormalBias, csm.depthScale);
+  });
   for (const m of casters) csm.addShadowCaster(m, false);
   for (const m of receivers) m.receiveShadows = true;
 
+  let ao: SSAO2RenderingPipeline | undefined;
   // contact shadows: darkening under eaves, in corners and at the foot of things
   if (SSAO2RenderingPipeline.IsSupported) {
-    const ao = new SSAO2RenderingPipeline('ao', scene, { ssaoRatio: 0.5, blurRatio: 0.5 }, [camera], false);
-    ao.radius = 9;
-    ao.totalStrength = 1.1;
-    ao.base = 0.12;
+    ao = new SSAO2RenderingPipeline('ao', scene, { ssaoRatio: 0.5, blurRatio: 0.5 }, [camera], false);
+    ao.radius = 6;
+    ao.totalStrength = 1.3;
+    ao.base = 0.06;
     ao.samples = 16;
     ao.maxZ = 2500;
     ao.minZAspect = 0.3;
@@ -94,7 +108,7 @@ export function setupRendering(
   cc.highlightsHue = 42;
   cc.highlightsDensity = 28;
   cc.highlightsSaturation = 6;
-  cc.globalSaturation = 6;
+  cc.globalSaturation = -12;
   ip.colorCurves = cc;
   ip.colorCurvesEnabled = true;
 
@@ -115,10 +129,21 @@ export function setupRendering(
   pipe.sharpen.edgeAmount = 0.18;
   pipe.sharpen.colorAmount = 1;
 
+  let active = true;
   return {
-    quality: q,
+    get quality() { return active ? 'high' as const : 'low' as const; },
+    downgrade: () => {
+      if (!active) return;
+      active = false; pipe.dispose(); ao?.dispose(); csm.dispose();
+      for (const m of receivers) m.receiveShadows = false;
+      for (const m of casters) if (m.metadata?.blossomShadow) m.dispose(false, false);
+    },
     addShadowCaster: (mesh) => {
-      csm.addShadowCaster(mesh, true);
+      if (active) {
+        movingCasters.add(mesh);
+        csm.addShadowCaster(mesh, true);
+        mesh.onDisposeObservable.addOnce(() => { if (active) csm.removeShadowCaster(mesh, false); });
+      }
     },
   };
 }
@@ -126,8 +151,8 @@ export function setupRendering(
 /** Light colours for a clear spring afternoon (used by the scene's sun and sky light). */
 export const LIGHT = {
   sunColor: new Color3(1, 0.91, 0.78),
-  sunIntensity: 1.05,
+  sunIntensity: 1.15,
   skyColor: new Color3(0.8, 0.86, 1),
   groundColor: new Color3(0.66, 0.6, 0.56),
-  skyIntensity: 0.95,
+  skyIntensity: 0.9,
 } as const;

@@ -2,7 +2,10 @@
 // because the loader captures it when it registers itself.
 import 'babylon-mmd/esm/Loader/mmdModelLoader';
 import 'babylon-mmd/esm/Loader/pmxLoader';
-import { type AbstractEngine, LoadAssetContainerAsync, type Scene, Vector3 } from '@babylonjs/core';
+import { type AbstractEngine } from '@babylonjs/core/Engines/abstractEngine.js';
+import { LoadAssetContainerAsync } from '@babylonjs/core/Loading/sceneLoader.js';
+import { type Scene } from '@babylonjs/core/scene.js';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { SdefInjector } from 'babylon-mmd/esm/Loader/sdefInjector';
 import { MmdRuntime } from 'babylon-mmd/esm/Runtime/mmdRuntime';
 import type { MmdMesh } from 'babylon-mmd/esm/Runtime/mmdMesh';
@@ -13,22 +16,8 @@ import { GetMmdWasmInstance } from 'babylon-mmd/esm/Runtime/Optimized/mmdWasmIns
 import { MultiPhysicsRuntime } from 'babylon-mmd/esm/Runtime/Optimized/Physics/Bind/Impl/multiPhysicsRuntime';
 import { MmdBulletPhysics } from 'babylon-mmd/esm/Runtime/Optimized/Physics/mmdBulletPhysics';
 
-/** Models in the private asset pack (private-assets/seisen). Never shipped in the public build. */
-export const MODELS = {
-  fubuki: 'seisen/清泉吹雪太眉LO.pmx',
-  hatsuyuki: 'seisen/清泉初雪太眉LO.pmx',
-  shirayuki: 'seisen/清泉白雪LO太眉.pmx',
-  miyuki: 'seisen/清泉深雪太眉LO.pmx',
-  uranami: 'seisen/清泉浦波太眉LO.pmx',
-  mogami: 'seisen/清泉もがみん太眉LO.pmx',
-  reiko: 'seisen/清泉玲子太眉LO.pmx',
-} as const;
-
-export type ModelKey = keyof typeof MODELS;
-
-export function isModelKey(key: string): key is ModelKey {
-  return Object.hasOwn(MODELS, key);
-}
+import { MODELS, modelUrl, type ModelKey } from './models';
+export { MODELS, modelUrl, isModelKey } from './models';
 
 /** Call once, right after creating the engine (enables SDEF skinning like MMD). */
 export function prepareEngineForMmd(engine: AbstractEngine): void {
@@ -51,11 +40,6 @@ export async function createMmdRuntime(scene: Scene): Promise<MmdRuntime> {
   const runtime = new MmdRuntime(scene, new MmdBulletPhysics(physicsRuntime));
   runtime.register(scene);
   return runtime;
-}
-
-/** URL of a file in the private asset pack, served by the dev/preview server. */
-export function modelUrl(path: string): string {
-  return `/private/${path.split('/').map(encodeURIComponent).join('/')}`;
 }
 
 export async function loadMmdModel(scene: Scene, runtime: MmdRuntime, key: ModelKey): Promise<MmdModel> {

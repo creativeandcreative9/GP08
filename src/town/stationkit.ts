@@ -1,4 +1,8 @@
-import { Color3, StandardMaterial, type Mesh, type Scene, type Texture } from '@babylonjs/core';
+import { Color3 } from '@babylonjs/core/Maths/math.color.js';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { type Mesh } from '@babylonjs/core/Meshes/mesh.js';
+import { type Scene } from '@babylonjs/core/scene.js';
+import { type Texture } from '@babylonjs/core/Materials/Textures/texture.js';
 import { MeshBatch } from './batch';
 import { quality } from '../render';
 import type { Ctx } from './ctx';
@@ -14,6 +18,8 @@ export class StationKit {
   readonly tex: StationTextures;
   /** Vertex-coloured interior surfaces and furniture. */
   readonly room = new MeshBatch();
+  /** Satin metal for the gate cases, separate from the wood and passengers. */
+  readonly metal = new MeshBatch();
   /** Self-lit parts (ceiling lights, indicator lamps, displays): unlit vertex colours, they bloom. */
   readonly glow = new MeshBatch();
   /** Translucent window panes. */
@@ -39,6 +45,12 @@ export class StationKit {
     m.backFaceCulling = false;
     m.twoSidedLighting = true;
     if (tex) m.diffuseTexture = tex;
+    if (name === 'stationMetalMat') {
+      m.specularColor.set(.25, .27, .3); m.specularPower = 95;
+    }
+    if (name === 'stationFloorMat' || name === 'stationTileMat') {
+      m.specularColor.set(.18, .19, .2); m.specularPower = 70;
+    }
     return m;
   }
 
@@ -47,16 +59,17 @@ export class StationKit {
     const add = (name: string, b: MeshBatch, m: StandardMaterial): void => {
       if (!b.empty) out.push(b.toMesh(name, this.scene, m));
     };
-    // warm fluorescent light: the tint cancels the blue of the sky light that leaks in, so whites stay white
-    const warm = new Color3(1, 0.95, 0.86);
-    const fill = (e: number): Color3 => new Color3(e * 1.05, e * 0.96, e * 0.78);
+    // Neutral fluorescent fill preserves the cool stone and satin metal of the concourse.
+    const warm = new Color3(.97, .98, 1);
+    const fill = (e: number): Color3 => new Color3(e, e * .99, e * 1.02);
     // without the sun (low quality) the floor gets a little more lamp light so that it does not look dull
     const low = quality(this.scene.getEngine()) === 'low';
     const e = ROOM_LIGHT;
     const floorE = e * 0.12 + (low ? 0.06 : 0.01);
     add('stationroom', this.room, this.mat('stationRoomMat', fill(e), warm));
+    add('stationmetal', this.metal, this.mat('stationMetalMat', fill(e * .55), warm));
     add('stationfloor', this.floor, this.mat('stationFloorMat', fill(floorE), new Color3(1, 0.96, 0.9), this.tex.floor));
-    add('stationceil', this.ceil, this.mat('stationCeilMat', new Color3(0.3, 0.33, 0.35), Color3.White(), this.tex.ceiling));
+    add('stationceil', this.ceil, this.mat('stationCeilMat', new Color3(.22, .23, .24), Color3.White(), this.tex.ceiling));
     add('stationwall', this.wallPanel, this.mat('stationWallMat', fill(e), warm, this.tex.wallPanel));
     add('stationtile', this.wallTile, this.mat('stationTileMat', fill(e), warm, this.tex.wallTile));
     add('stationtactile', this.tactile, this.mat('stationTactileMat', fill(floorE), new Color3(1, 0.96, 0.9), this.tex.tactile));

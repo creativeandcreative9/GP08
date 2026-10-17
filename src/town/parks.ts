@@ -10,7 +10,7 @@ import { hex, type RGB } from './util';
 /** Lawn with cross paths, cherry trees along the edge, benches and a name board. */
 export function addPark(c: Ctx, lot: Lot, f: Frame, hu: number, hv: number): void {
   const b = c.main.at(f.cx, f.cz);
-  const lawn = hex(0x93d56d);
+  const lawn = hex(0x8da77c);
   const path = hex(0xf1e6d0);
   const q = (dec: 'dec1' | 'dec2' | 'dec3', u0: number, u1: number, v0: number, v1: number, col: RGB, y: number): void =>
     c[dec].quad(f.pt(u0, y, v0), f.pt(u1, y, v0), f.pt(u1, y, v1), f.pt(u0, y, v1), col, [0, 1, 0]);

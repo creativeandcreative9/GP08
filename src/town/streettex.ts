@@ -1,4 +1,6 @@
-import { DynamicTexture, Texture, type Scene } from '@babylonjs/core';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture.js';
+import { type Scene } from '@babylonjs/core/scene.js';
 import { makeRng } from './util';
 
 /**
@@ -55,65 +57,34 @@ function blot(g: G, w: number, h: number, x: number, y: number, r: number, c: C3
   }
 }
 
-/**
- * Sidewalk pavers: 16 x 2 square tiles of 8 world units (the texture repeats every 128 x 16 units), warm grey and
- * beige with per-tile brightness changes, bevelled edges, dark joints and soft stains.
- */
+/** Staggered 32 x 16 cm concrete pavers, with fine joints and quiet warm-grey variation. */
 export function paveTexture(scene: Scene): DynamicTexture {
-  const W = 2048;
-  const H = 256;
-  const T = 128;
-  const J = 6; // joint width in texels (0.4 unit)
+  const W = 2048, H = 256, T = 128, J = 3;
   return make(scene, 'streetPave', W, H, (g) => {
-    const rnd = makeRng(1701);
-    g.fillStyle = '#7f786b';
-    g.fillRect(0, 0, W, H);
-    // two tone families laid out as a checker (市松), so that the pattern still reads once the joints blur out
-    const warm: C3[] = [[218, 210, 195], [212, 203, 187], [222, 215, 201], [208, 199, 183]];
-    const cool: C3[] = [[190, 189, 184], [184, 184, 180], [196, 195, 189], [180, 178, 172]];
-    for (let ty = 0; ty < H / T; ty++) {
-      for (let tx = 0; tx < W / T; tx++) {
-        const fam = (tx + ty) % 2 === 0 ? warm : cool;
-        const base = fam[Math.floor(rnd() * fam.length)]!;
-        const k = 0.96 + rnd() * 0.08;
-        const x = tx * T + J / 2;
-        const y = ty * T + J / 2;
-        const s = T - J;
-        const gr = g.createLinearGradient(x, y, x + s, y + s);
-        gr.addColorStop(0, css(base, k * 1.04));
-        gr.addColorStop(1, css(base, k * 0.96));
-        g.fillStyle = gr;
-        g.fillRect(x, y, s, s);
-        // bevel: lit top-left edges, shaded bottom-right edges
-        g.fillStyle = 'rgba(255,255,255,0.22)';
-        g.fillRect(x, y, s, 2);
-        g.fillRect(x, y, 2, s);
-        g.fillStyle = 'rgba(60,50,38,0.20)';
-        g.fillRect(x, y + s - 3, s, 3);
-        g.fillRect(x + s - 3, y, 3, s);
-        // a few chips and dark specks
-        const n = 3 + Math.floor(rnd() * 5);
-        for (let i = 0; i < n; i++) {
-          g.fillStyle = rnd() < 0.5 ? 'rgba(70,62,50,0.22)' : 'rgba(255,255,255,0.18)';
-          g.fillRect(x + 6 + rnd() * (s - 14), y + 6 + rnd() * (s - 14), 2 + rnd() * 5, 2 + rnd() * 3);
-        }
-        // the odd stained or replaced tile
-        if (rnd() < 0.12) {
-          g.fillStyle = rnd() < 0.5 ? 'rgba(90,80,62,0.13)' : 'rgba(255,250,235,0.16)';
-          g.fillRect(x, y, s, s);
-        }
-      }
+    const rnd = makeRng(1701), tile = document.createElement('canvas'); tile.width = tile.height = T;
+    const t = tile.getContext('2d')!;
+    g.fillStyle = '#aaa59c'; g.fillRect(0, 0, W, H);
+    const warm: C3[] = [[214, 207, 198], [209, 202, 193], [218, 212, 203], [207, 200, 191]];
+    const cool: C3[] = [[204, 203, 199], [199, 199, 195], [209, 208, 202], [202, 201, 196]];
+    for (let ty = 0; ty < H / T; ty++) for (let tx = 0; tx < W / T; tx++) {
+      t.clearRect(0, 0, T, T);
+      const family = (tx + ty) % 2 ? cool : warm, base = family[Math.floor(rnd() * family.length)]!, k = .98 + rnd() * .04;
+      const x = J / 2, y = J / 2, size = T - J, gradient = t.createLinearGradient(x, y, x + size, y + size);
+      gradient.addColorStop(0, css(base, k * 1.025)); gradient.addColorStop(1, css(base, k * .975)); t.fillStyle = gradient; t.fillRect(x, y, size, size);
+      t.fillStyle = 'rgba(255,255,255,.18)'; t.fillRect(x, y, size, 2); t.fillRect(x, y, 2, size);
+      t.fillStyle = 'rgba(60,50,38,.14)'; t.fillRect(x, y + size - 2, size, 2); t.fillRect(x + size - 2, y, 2, size);
+      const chips = 1 + Math.floor(rnd() * 3);
+      for (let i = 0; i < chips; i++) { t.fillStyle = rnd() < .5 ? 'rgba(70,62,50,.15)' : 'rgba(255,255,255,.12)'; t.fillRect(x + 6 + rnd() * (size - 14), y + 6 + rnd() * (size - 14), 2 + rnd() * 3, 1 + rnd() * 2); }
+      const at = tx * T - (ty % 2) * T / 2;
+      g.drawImage(tile, at, ty * T); if (at < 0) g.drawImage(tile, at + W, ty * T);
     }
-    for (let i = 0; i < 26; i++) {
-      const dark = rnd() < 0.6;
-      blot(g, W, H, rnd() * W, rnd() * H, 50 + rnd() * 150, dark ? [70, 62, 50] : [255, 250, 235], 0.03 + rnd() * 0.05);
-    }
-    grain(g, W, H, 9, rnd);
+    for (let i = 0; i < 26; i++) blot(g, W, H, rnd() * W, rnd() * H, 50 + rnd() * 150, rnd() < .6 ? [70, 62, 50] : [255, 250, 235], .02 + rnd() * .025);
+    grain(g, W, H, 6, rnd);
   });
 }
 
 /**
- * Kerb stones: 16 blocks of 12 world units in a row (the texture repeats every 192 units), light grey with a
+ * Kerb stones: 16 blocks of 6 world units in a row (the texture repeats every 96 units), light grey with a
  * different tone per block, thin dark joints, grime near the bottom and a few chips. v runs from the foot of the
  * kerb (0) to its top (1); the same strip is used for the top face (road side 0 -> sidewalk side 1).
  */

@@ -3,10 +3,12 @@ import { DEC0_Y, DEC1_Y, DEC2_Y, DEC3_Y, type Ctx } from './ctx';
 import { plazaW, railW, RAIL_HALF, roadClearance, roadsW, stationRect, type Pt } from './site';
 import { PLATFORM, platformObstacles } from './platform';
 import { buildNamePoles, buildPlatformSlabs, buildStationBuilding } from './station';
-import { buildTrain } from './train';
+import { buildTrain, TRAIN } from './train';
 import { stationObstacles } from './stationplan';
 import { heightAt } from './terrain';
 import { hex, type RGB, type V3 } from './util';
+import { PLAZA_BENCHES } from './benches';
+import { plantCards } from './greenery';
 
 const ASPHALT = hex(0x62656f);
 const SIDEWALK = hex(0xc9c6bd);
@@ -287,7 +289,7 @@ export function buildStation(c: Ctx): void {
   }
   // station name poles on both platforms, and the train standing at the platform
   buildNamePoles(c, b);
-  buildTrain(b);
+  buildTrain(b, c.glass.at(0, TRAIN.z));
 
   // footbridge over the tracks
   const bx = 430;
@@ -306,7 +308,7 @@ export function buildStation(c: Ctx): void {
 export function buildPlaza(c: Ctx): void {
   const p = plazaW;
   const pave = hex(0xe6d9c6);
-  const lawn = hex(0x8fd16a);
+  const lawn = hex(0x8ba777);
   const path = hex(0xf0e6d4);
   c.dec0.disc(p.x, p.z, DEC0_Y + 0.05, p.rx, p.rz, 64, pave);
   c.dec1.disc(p.x, p.z, DEC1_Y, p.rx * 0.84, p.rz * 0.8, 64, lawn);
@@ -333,17 +335,16 @@ export function buildPlaza(c: Ctx): void {
     const a = (i / 40) * Math.PI * 2;
     const r = 92;
     c.dec3.disc(Math.cos(a) * r, Math.sin(a) * r, DEC3_Y, 11, 11, 8, hex(0x4f9a3c));
-    b.blob(Math.cos(a) * r, 4, Math.sin(a) * r, 6, 4, 6, bedCols[i % bedCols.length]!, 0.1, i);
+    if (c.foliage) plantCards(c, Math.cos(a) * r, .7, Math.sin(a) * r, 10, i % 3 === 0 ? 'bedDaisy' : i % 3 === 1 ? 'bedPansy' : 'bedTulip', a);
+    else b.blob(Math.cos(a) * r, 4, Math.sin(a) * r, 6, 4, 6, bedCols[i % bedCols.length]!, 0.1, i);
   }
   // benches along the north-south path and lamps
-  for (const z of [-300, -180, 180, 300, 420]) {
-    for (const x of [-52, 52]) {
-      const dir = x < 0 ? -1 : 1;
-      b.box(x - 3, x + 3, 5, 7, z - 11, z + 11, hex(0x8a5f3a));
-      b.box(x + dir * 2, x + dir * 4, 7, 15, z - 11, z + 11, hex(0x8a5f3a));
-      b.box(x - 2, x - 1, 0, 5, z - 9, z - 8, hex(0x444444));
-      b.box(x - 2, x - 1, 0, 5, z + 8, z + 9, hex(0x444444));
-    }
+  for (const { x, z } of PLAZA_BENCHES) {
+    const dir = x < 0 ? -1 : 1;
+    b.box(x - 3, x + 3, 5, 7, z - 11, z + 11, hex(0x8a5f3a));
+    b.box(x + dir * 2, x + dir * 4, 7, 15, z - 11, z + 11, hex(0x8a5f3a));
+    b.box(x - 2, x - 1, 0, 5, z - 9, z - 8, hex(0x444444));
+    b.box(x - 2, x - 1, 0, 5, z + 8, z + 9, hex(0x444444));
   }
   for (const z of [-360, -240, 240, 360, 480]) {
     for (const x of [-40, 40]) {

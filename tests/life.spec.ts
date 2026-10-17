@@ -6,8 +6,42 @@ import { Traffic, zoneSpeed, type Car } from '../src/life/traffic';
 import { CAR_KINDS } from '../src/life/carmodels';
 import { insideAny, roadClearance, roadsW } from '../src/town/site';
 import { makeRng, type Rect } from '../src/town/util';
+import { NullEngine, Scene, StandardMaterial } from '@babylonjs/core';
+import { OUTFITS, STAFF } from '../src/life/outfits';
+import { buildFused, buildSeated } from '../src/life/people';
+
+test('fused staff and seated people can become renderable meshes with aligned surface tags', () => {
+  const engine = new NullEngine();
+  const scene = new Scene(engine);
+  try {
+    const material = new StandardMaterial('test', scene);
+    for (const [id, batch] of [
+      ...Object.entries(STAFF).map(([id, outfit]) => [id, buildFused(outfit)] as const),
+      ...OUTFITS.map(outfit => [outfit.id, buildSeated(outfit, 6.2)] as const),
+    ]) {
+      expect(batch.vertexCount, id).toBeGreaterThan(0);
+      expect(batch.surf.length, id).toBe(batch.vertexCount);
+      expect(batch.toMesh(id, scene, material).getTotalVertices(), id).toBe(batch.vertexCount);
+    }
+  } finally { scene.dispose(); engine.dispose(); }
+});
 
 // ---- pure logic: paths, traffic and the crowd (no browser) -----------------------------------------------------
+
+test('a walking resident stays in place during a conversation and can resume afterward', () => {
+  const crowd = new Crowd({}, { walkers: [0, 1], jogger: 2, wagashi: 3, cafe: 4, station: 5, sitters: { low: [0], high: [1] } });
+  const walker = crowd.people.find(p => p.mode === 'walk' && !p.buddy)!;
+  crowd.update(0.1);
+  walker.talking = true;
+  const start = { x: walker.x, z: walker.z };
+  for (let i = 0; i < 50; i++) crowd.update(0.1);
+  expect({ x: walker.x, z: walker.z }).toEqual(start);
+  expect(walker.speed).toBe(0);
+  expect(walker.swing).toBe(0);
+  walker.talking = false;
+  for (let i = 0; i < 50; i++) crowd.update(0.1);
+  expect(Math.hypot(walker.x - start.x, walker.z - start.z)).toBeGreaterThan(1);
+});
 
 test('Path: arc length addressing, projection and windows', () => {
   const pts = [
@@ -292,11 +326,17 @@ test('the town has cars and people, they move every frame, and the page logs no 
   await page.goto('/?model=none');
   await page.waitForFunction(() => window.__gp08?.ready === true, null, { timeout: 120_000 });
 
-  const read = (): Promise<{ info: Omit<LifeInfo, 'positions'>; cars: [number, number][]; walkers: [number, number][] }> =>
+  const read = (): Promise<{ info: Omit<LifeInfo, 'positions'>; cars: [number, number][]; walkers: [number, number][]; carShadows: number[][]; personShadows: number[][] }> =>
     page.evaluate(() => {
       const life = (window.__gp08.scene!.metadata as { life: LifeInfo }).life;
       const { positions, ...info } = life;
-      return { info, ...positions() };
+      const shadows = (name: string): number[][] => {
+        const mesh = window.__gp08.scene!.getMeshByName(name) as unknown as { _thinInstanceDataStorage: { matrixData: Float32Array } };
+        const data = mesh._thinInstanceDataStorage.matrixData, result: number[][] = [];
+        for (let o = 0; o < data.length; o += 16) if (data[o + 15] === 1) result.push([data[o + 12]!, data[o + 14]!]);
+        return result;
+      };
+      return { info, ...positions(), carShadows: shadows('life_contact_cars'), personShadows: shadows('life_contact_people') };
     });
   const a = await read();
   expect(a.info.driving).toBeGreaterThanOrEqual(15);
@@ -307,6 +347,14 @@ test('the town has cars and people, they move every frame, and the page logs no 
   expect(a.info.dogs).toBeGreaterThanOrEqual(1);
   expect(a.info.staff.length, 'shop clerks and station staff at their posts').toBeGreaterThanOrEqual(2);
   expect(a.info.vertices).toBeLessThan(60_000);
+  const buffers = await page.evaluate(() => window.__gp08.scene!.meshes.filter(m => m.name.startsWith('life_')).map(m => ({
+    name: m.name, count: (m as import('@babylonjs/core/Meshes/mesh.js').Mesh).thinInstanceCount, matrix: m.isVerticesDataPresent('world0'),
+  })));
+  expect(buffers.length).toBeGreaterThan(50);
+  for (const buffer of buffers) {
+    expect(buffer.count, `${buffer.name} has real GPU instances`).toBeGreaterThan(0);
+    expect(buffer.matrix, `${buffer.name} supplies the instance transform attribute`).toBe(true);
+  }
 
   // wait for rendered frames (software rendering can be slow)
   const frames = await page.evaluate(() => window.__gp08.frames);
@@ -316,6 +364,12 @@ test('the town has cars and people, they move every frame, and the page logs no 
   const movedWalkers = a.walkers.filter((p, i) => Math.hypot(p[0] - b.walkers[i]![0], p[1] - b.walkers[i]![1]) > 1).length;
   expect(movedCars).toBeGreaterThan(a.cars.length * 0.7);
   expect(movedWalkers).toBeGreaterThan(a.walkers.length * 0.6);
+  for (const frame of [a, b]) {
+    for (const [actors, shadows] of [[frame.cars, frame.carShadows], [frame.walkers, frame.personShadows]]) {
+      expect(shadows!.length).toBeGreaterThan(actors!.length);
+      for (const p of actors!) expect(shadows!.some(s => Math.hypot(s[0]! - p[0]!, s[1]! - p[1]!) < .01), 'each moving actor keeps a shadow at its feet').toBe(true);
+    }
+  }
 
   expect(pageErrors).toEqual([]);
   expect(consoleErrors).toEqual([]);

@@ -1,18 +1,27 @@
-import {
-  MaterialPluginBase,
-  ShaderLanguage,
-  type AbstractMesh,
-  type Material,
-  type MaterialDefines,
-  type Scene,
-  type UniformBuffer,
-} from '@babylonjs/core';
+import { applyDiffuseLighting } from './diffuse-lighting';
+import { MaterialPluginBase } from '@babylonjs/core/Materials/materialPluginBase.js';
+import { ShaderLanguage } from '@babylonjs/core/Materials/shaderLanguage.js';
+import { type AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.js';
+import { type Material } from '@babylonjs/core/Materials/material.js';
+import { type MaterialDefines } from '@babylonjs/core/Materials/materialDefines.js';
+import { type Scene } from '@babylonjs/core/scene.js';
+import { type UniformBuffer } from '@babylonjs/core/Materials/uniformBuffer.js';
 
 /**
- * Per-vertex surface tags (vertex buffer `gp08Surf`, written by `MeshBatch`): what a face is made of,
- * where the colour alone cannot tell. 0 = plain.
+ * Per-vertex surface tags (vertex buffer `gp08Surf`, written by `MeshBatch` and by the indexed quads of `HB`): what a
+ * face is made of, where the colour alone cannot tell. 0 = plain. The tens digit of the stored value is the long axis of
+ * the piece (see `MeshBatch.axis`), so a tag is always 0-9.
+ *  - roofTiles: kawara rows parallel to the eaves
+ *  - tile:      glazed wall tiles in running bond with grout (mansions, bank, shop bases)
+ *  - panel:     large cladding / curtain-wall panels with open joints and bolts
+ *  - siding:    lapped horizontal boards (apartments)
+ *  - shutter:   rolling shutter slats
+ *  - corrugated: vertical ribbed sheet metal
+ *  - concrete:  board-marked concrete with form-tie holes
+ *  - stone:     ashlar blocks of random course height (plinths, steps)
  */
-export const SURF = { plain: 0, roofTiles: 1 } as const;
+// 100 is a finish flag, outside the 0–39 kind/axis values: painted metal bypasses colour-based wood/petal patterns.
+export const SURF = { plain: 0, roofTiles: 1, tile: 2, panel: 3, siding: 4, shutter: 5, corrugated: 6, concrete: 7, stone: 8, bark: 9, paintedMetal: 100, roundedFoliage: 200 } as const;
 export const SURF_KIND = 'gp08Surf';
 
 /** What a whole material draws (the decal layers and the terrain are one kind each). */
@@ -39,6 +48,112 @@ float gpNoise(vec3 x) {
     mix(mix(gpHash(i), gpHash(i + vec3(1.0, 0.0, 0.0)), f.x), mix(gpHash(i + vec3(0.0, 1.0, 0.0)), gpHash(i + vec3(1.0, 1.0, 0.0)), f.x), f.y),
     mix(mix(gpHash(i + vec3(0.0, 0.0, 1.0)), gpHash(i + vec3(1.0, 0.0, 1.0)), f.x), mix(gpHash(i + vec3(0.0, 1.0, 1.0)), gpHash(i + vec3(1.0, 1.0, 1.0)), f.x), f.y),
     f.z);
+}
+// distance (world units) from x to the nearest multiple of period
+float gpDist(float x, float period) {
+  float f = fract(x / period);
+  return min(f, 1.0 - f) * period;
+}
+// 1 inside a groove of width w centred on d = 0, softened over one pixel footprint fw
+float gpGroove(float d, float w, float fw) {
+  return 1.0 - smoothstep(w * 0.5, w * 0.5 + fw, d);
+}
+/**
+ * Wall materials chosen by the surface tag (SURF): kind 2 tile, 3 panel, 4 siding, 5 shutter, 6 corrugated metal,
+ * 7 concrete, 8 stone. u runs along the wall, y is the height (on a top face: x and z). Every pattern fades to its
+ * average tone once its cells get close to a pixel, so nothing shimmers in the distance.
+ */
+void gpTagged(float kind, vec3 P, vec3 N, float fw, bool top, inout vec3 col, inout float m) {
+  float u = abs(N.x) > abs(N.z) ? P.z : P.x;
+  float y = P.y;
+  if (top) { u = P.x; y = P.z; }
+  float lum = dot(col, vec3(0.299, 0.587, 0.114));
+  if (kind > 8.5) {
+    // Cherry bark: long broken fissures, grey-brown plates and fine horizontal lenticels.
+    // World-space grain continues across the smooth trunk rings and fades below a pixel.
+    float grain = gpNoise(P * vec3(0.8, 0.055, 0.8));
+    float crease = 1.0 - smoothstep(0.18, 0.28, grain);
+    float fade = 1.0 - smoothstep(0.2, 1.1, fw);
+    float row = floor(y / 2.8);
+    float dash = smoothstep(0.55, 0.72, gpNoise(vec3(u * 0.6, row * 5.0, 18.0)));
+    float line = gpGroove(gpDist(y + gpNoise(P * 0.07) * 0.6, 2.8), 0.16, fw) * dash;
+    col = mix(col, vec3(0.34, 0.29, 0.28), 0.42 * line * fade);
+    m *= 1.0 + (0.32 * (grain - 0.5) - 0.28 * crease + 0.14 * line) * fade + 0.08 * (gpNoise(P * 0.012) - 0.5);
+  } else if (kind < 2.5) {
+    // glazed tiles in running bond, 6 x 2.8 units (the real ones are far smaller, but this is what reads at street level)
+    float tw = 6.0;
+    float th = 2.8;
+    float row = floor(y / th);
+    float off = mod(row, 2.0) * tw * 0.5;
+    float fade = 1.0 - smoothstep(0.18 * th, 0.6 * th, fw);
+    float line = max(gpGroove(gpDist(u + off, tw), 0.34, fw), gpGroove(gpDist(y, th), 0.3, fw));
+    vec3 grout = mix(col * 0.66, vec3(0.8, 0.78, 0.74), smoothstep(0.5, 0.3, lum));
+    float tone = gpHash(vec3(floor((u + off) / tw), row, 11.0)) - 0.5;
+    float fy = fract(y / th);
+    col = mix(col, grout, 0.8 * line * fade + 0.12 * (1.0 - fade));
+    m *= 1.0 + (0.1 * tone + 0.05 * (smoothstep(0.0, 0.25, fy) - smoothstep(0.75, 1.0, fy))) * fade;
+  } else if (kind < 3.5) {
+    // cladding panels 18 wide, as tall as a storey (36, the joint lines meet the floors at y = 4 + 36 k), open joints and bolts
+    float pw = 18.0;
+    float ph = 36.0;
+    float dxp = gpDist(u, pw);
+    float dyp = gpDist(y - 4.0, ph);
+    float fade = 1.0 - smoothstep(0.1 * ph, 0.35 * ph, fw);
+    float joint = max(gpGroove(dxp, 0.5, fw), gpGroove(dyp, 0.6, fw));
+    float bolt = gpGroove(length(vec2(dxp - 2.4, dyp - 2.6)), 0.7, fw);
+    float pid = gpHash(vec3(floor(u / pw), floor((y - 4.0) / ph), 21.0)) - 0.5;
+    col = mix(col, col * 0.6, 0.85 * joint * fade + 0.05 * (1.0 - fade));
+    col *= 1.0 - 0.25 * bolt * fade;
+    m *= 1.0 + 0.06 * pid * fade;
+  } else if (kind < 4.5) {
+    // lapped boards 3.6 high: each casts a shadow on the one below, the lower lip catches the light; butt joints every 36
+    float bh = 3.6;
+    float row = floor(y / bh);
+    float fy = fract(y / bh);
+    float fade = 1.0 - smoothstep(0.2 * bh, 0.6 * bh, fw);
+    float lip = 1.0 - smoothstep(0.0, 0.1, fy);
+    float shadow = smoothstep(0.78, 1.0, fy);
+    float joint = gpGroove(gpDist(u + gpHash(vec3(row, 5.0, 1.0)) * 36.0, 36.0), 0.3, fw);
+    m *= 1.0 + (0.07 * lip - 0.2 * shadow - 0.14 * joint) * fade - 0.04 * (1.0 - fade);
+  } else if (kind < 5.5) {
+    // rolling shutter: slats 1.1 high, each with a lit upper half and a dark gap
+    float sh = 1.1;
+    float fy = fract(y / sh);
+    float fade = 1.0 - smoothstep(0.25 * sh, 0.7 * sh, fw);
+    float gap = 1.0 - smoothstep(0.0, 0.14 + fw / sh, fy);
+    m *= 1.0 + (0.14 * (fy - 0.5) - 0.3 * gap) * fade - 0.04 * (1.0 - fade);
+    m *= 1.0 + 0.06 * (gpNoise(vec3(u * 0.35, y * 0.05, 3.0)) - 0.5);
+  } else if (kind < 6.5) {
+    // corrugated sheet metal: ribs 3 apart
+    float fade = 1.0 - smoothstep(0.35, 0.9, fw);
+    m *= 1.0 + 0.17 * sin(u * 2.0943951) * fade;
+    m *= 1.0 + 0.1 * (gpNoise(vec3(u * 0.05, y * 0.02, 8.0)) - 0.5);
+  } else if (kind < 7.5) {
+    // board-marked concrete: form panels 24 x 12, tie holes on a 12-unit grid, streaks and mottling
+    float cw = 24.0;
+    float ch = 12.0;
+    float fade = 1.0 - smoothstep(0.1 * ch, 0.4 * ch, fw);
+    float joint = max(gpGroove(gpDist(u, cw), 0.26, fw), gpGroove(gpDist(y, ch), 0.26, fw));
+    float hole = gpGroove(length(vec2(gpDist(u - 6.0, 12.0), gpDist(y - 6.0, 12.0))), 0.9, fw);
+    float pid = gpHash(vec3(floor(u / cw), floor(y / ch), 31.0)) - 0.5;
+    float mott = gpNoise(vec3(u * 0.09, y * 0.09, 3.0)) - 0.5;
+    float streak = gpNoise(vec3(u * 0.45, y * 0.02, 1.0)) - 0.5;
+    col = mix(col, col * 0.62, (0.5 * joint + 0.7 * hole) * fade);
+    m *= 1.0 + (0.06 * pid + 0.1 * mott) * fade + 0.07 * streak;
+  } else {
+    // ashlar: courses 6.5 high, blocks 11-17 wide, each course shifted by its own amount
+    float ch = 6.5;
+    float row = floor(y / ch);
+    float bw = 11.0 + 6.0 * gpHash(vec3(row, 1.0, 2.0));
+    float off = gpHash(vec3(row, 3.0, 4.0)) * bw;
+    float fade = 1.0 - smoothstep(0.1 * ch, 0.45 * ch, fw);
+    float line = top ? 0.0 : gpGroove(gpDist(y, ch), 0.42, fw);
+    float joint = max(line, gpGroove(gpDist(u + off, bw), 0.42, fw));
+    float tone = gpHash(vec3(floor((u + off) / bw), row, 7.0)) - 0.5;
+    float speck = (gpNoise(P * 1.3) - 0.5) * (1.0 - smoothstep(0.2, 0.55, fw * 1.6));
+    col = mix(col, col * 0.58, 0.85 * joint * fade + 0.06 * (1.0 - fade));
+    m *= 1.0 + 0.16 * tone * fade + 0.1 * speck;
+  }
 }
 `;
 
@@ -129,7 +244,13 @@ vGp08Surf = 0.0;
 #ifdef VERTEXCOLOR
     vec3 vc = vColor.rgb;
     float glass = step(0.7, vc.b) * step(0.15, vc.b - vc.r) * step(0.35, vc.r) * step(abs(N.y), 0.3);
-    if (glass > 0.5) {
+    if (vGp08Surf >= 199.5) {
+      // Clipped shrubs have a continuous rounded silhouette and quiet leaf-scale variation.
+      m *= 1.0 + .04 * big + .008 * fine;
+    } else if (vGp08Surf >= 99.5) {
+      // Painted metal bypasses colour-based wood, foliage, blossom and building patterns.
+      m *= 1.0 + .02 * big + .015 * fine;
+    } else if (glass > 0.5) {
       float fres = pow(1.0 - clamp(abs(dot(N, viewDirectionW)), 0.0, 1.0), 2.0);
       float s = fract((P.x + P.z) * 0.011 + P.y * 0.026);
       float streak = smoothstep(0.0, 0.025, s) * (1.0 - smoothstep(0.05, 0.11, s)) * (1.0 - smoothstep(0.5, 1.5, fw * 0.08));
@@ -150,7 +271,10 @@ vGp08Surf = 0.0;
       float sv = floor(vGp08Surf + 0.5);
       float axis = floor(sv * 0.1 + 0.01);
       float vert = 1.0 - smoothstep(0.45, 0.8, abs(N.y)); // 1 on walls, 0 on tops
-      if (hue > 14.0 && hue < 46.0 && sat > 0.3 && sat < 0.85 && mx > 0.16 && mx < 0.9) {
+      if (sv0 > 1.5) {
+        // a tagged wall material (tile, panel, siding, shutter, corrugated metal, concrete, stone): see gpTagged
+        if (vert > 0.5 || sv0 > 7.5) gpTagged(sv0, P, N, fw, vert < 0.5, col, m);
+      } else if (hue > 14.0 && hue < 46.0 && sat > 0.3 && sat < 0.85 && mx > 0.16 && mx < 0.9) {
         // wood: grain stretched along the piece's long axis (or along the face when the axis is unknown)
         vec3 sc = vec3(1.1);
         if (axis > 0.5) {
@@ -161,7 +285,14 @@ vGp08Surf = 0.0;
         float g1 = gpNoise(P * sc) - 0.5;
         float g2 = (gpNoise(P * sc * 3.1 + 7.7) - 0.5) * (1.0 - smoothstep(0.2, 0.55, fw * 3.4));
         float ring = smoothstep(0.62, 0.8, gpNoise(P * sc * 0.45 + 3.3));
-        m *= 1.0 + 0.4 * g1 + 0.2 * g2 - 0.12 * ring;
+        // Broad contrast reads as stains on a shaded board. Keep it quiet and use fine, flowing grain.
+        float along = P.x;
+        float across = abs(N.y) > .6 ? P.z : P.y;
+        if (axis > 1.5 && axis < 2.5) { along = P.y; across = abs(N.x) > abs(N.z) ? P.z : P.x; }
+        else if (axis > 2.5 || (axis < .5 && abs(N.x) > abs(N.z) && abs(N.y) < .6)) { along = P.z; across = abs(N.y) > .6 ? P.x : P.y; }
+        float grainFade = 1.0 - smoothstep(.08, .35, fw);
+        float grain = sin(across * 18.0 + gpNoise(vec3(along * .035, across * .08, 13.0)) * 6.0);
+        m *= 1.0 + .075 * g1 + .03 * g2 - .015 * ring + .018 * grain * grainFade;
       } else if ((hue < 14.0 || hue > 350.0) && sat > 0.5 && sat < 0.78 && mx > 0.4 && mx < 0.82 && vert > 0.5) {
         // brick: running bond, 21 x 8 cm bricks, light mortar, tone varying brick by brick
         float u = abs(N.x) > abs(N.z) ? P.z : P.x;
@@ -208,6 +339,13 @@ vGp08Surf = 0.0;
     }
   } else if (gp08Kind < 1.5) {
     m *= 1.0 + 0.05 * big + 0.05 * mid + 0.08 * fine;
+    // Small running-bond paving slabs, with narrow worn joints and a varied stone tone.
+    float row = floor(P.z / 5.5);
+    float off = mod(row, 2.0) * 4.0;
+    float joint = max(gpGroove(gpDist(P.x + off, 8.0), 0.14, fw), gpGroove(gpDist(P.z, 5.5), 0.14, fw));
+    float fade = 1.0 - smoothstep(0.7, 2.5, fw);
+    float tile = gpHash(vec3(floor((P.x + off) / 8.0), row, 4.0)) - 0.5;
+    m *= 1.0 + (0.07 * tile - 0.14 * joint) * fade;
   } else if (gp08Kind < 2.5) {
     m *= 1.0 + 0.16 * big + 0.1 * mid + 0.1 * fine;
   } else if (gp08Kind < 3.5) {
@@ -225,10 +363,16 @@ vGp08Surf = 0.0;
   }
 }
 
+/** A new vertex-coloured material can use the same wood, plaster and worn-surface detail as the town. */
+export function applySurfaceDetailTo(material: Material): void {
+  new SurfacePlugin(material, 0);
+}
+
 /** Adds the surface detail to the town materials (call once after the town is built, before rendering). */
 export function applySurfaceDetail(scene: Scene): void {
   for (const m of scene.materials) {
     const kind = KIND[m.name];
     if (kind !== undefined) new SurfacePlugin(m, kind);
+    if (m.name === 'townMat' || m.name === 'decal0') applyDiffuseLighting(m);
   }
 }

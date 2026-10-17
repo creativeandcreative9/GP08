@@ -1,10 +1,16 @@
-import { Color3, Material, StandardMaterial, type Mesh, type Scene, type Texture } from '@babylonjs/core';
+import { Color3 } from '@babylonjs/core/Maths/math.color.js';
+import { Material } from '@babylonjs/core/Materials/material.js';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { type Mesh } from '@babylonjs/core/Meshes/mesh.js';
+import { type Scene } from '@babylonjs/core/scene.js';
+import { type Texture } from '@babylonjs/core/Materials/Textures/texture.js';
 import { ChunkedBatch, MeshBatch } from './batch';
 import { DEC2_Y, DEC3_Y, type Ctx } from './ctx';
 import { RoadPath, breaks, findArms, freeRuns, inPlaza, ivMerge, ivMinus, steep, type Iv } from './roadpath';
 import { roadClearance, roadsW } from './site';
 import { heightAt } from './terrain';
 import * as T from './streettex';
+import { clipPaving, type ClipPoint, type PavingVertex } from './paving';
 import { hex, makeRng, mix, shade, type RGB, type V3 } from './util';
 
 /**
@@ -24,10 +30,10 @@ import { hex, makeRng, mix, shade, type RGB, type V3 } from './util';
 const KERB_W = 2;
 const KERB_H = 1.6;
 const SW_IN = 2; // the paved band starts under the asphalt ...
-const SW_OUT = 13; // ... and reaches this far beyond the road edge (as the flat sidewalk does)
-const PAVE_U = 128; // texture repeat lengths along / across the strips
-const PAVE_V = 16;
-const KERB_U = 192;
+const SW_OUT = 23; // up to 1.84 m beyond the road edge; cut back at plots and crossing roads
+const PAVE_U = 64; // texture repeat lengths along / across the strips
+const PAVE_V = 4;
+const KERB_U = 96;
 const TAC_IN = 3.5; // tactile strip: from the road edge to its inner side
 const TAC_W = 4;
 const TAC_U = 16;
@@ -89,6 +95,35 @@ function strip(
     const s0 = bs[i]!;
     const s1 = bs[i + 1]!;
     b.quad(p(s0, oa), p(s1, oa), p(s1, ob), p(s0, ob), color, UP, uv ? [uv(s0, oa), uv(s1, oa), uv(s1, ob), uv(s0, ob)] : undefined);
+  }
+}
+
+interface PavingMask { polygon: ClipPoint[]; minX: number; maxX: number; minZ: number; maxZ: number }
+function pavingMask(polygon: ClipPoint[]): PavingMask {
+  return { polygon, minX: Math.min(...polygon.map(p => p.x)), maxX: Math.max(...polygon.map(p => p.x)), minZ: Math.min(...polygon.map(p => p.z)), maxZ: Math.max(...polygon.map(p => p.z)) };
+}
+
+/** Fill the available frontage without painting over a reserved plot or another carriageway. */
+function pavedStrip(b: MeshBatch, path: RoadPath, sa: number, sb: number, side: 1 | -1, y: number, phaseU: number, phaseV: number, masks: readonly PavingMask[]): void {
+  const near = side * (path.hw - SW_IN), far = side * (path.hw + SW_OUT);
+  const bs = breaks(path, sa, sb, (near + far) / 2, 240);
+  const vertex = (s: number, o: number): PavingVertex => { const [x, z] = path.at(s, o); return { x, z, u: s / PAVE_U + phaseU, v: (Math.abs(o) - path.hw) / PAVE_V + phaseV }; };
+  const point = (p: PavingVertex): V3 => [p.x, heightAt(p.x, p.z) + y, p.z];
+  for (let i = 0; i + 1 < bs.length; i++) {
+    const quad = [vertex(bs[i]!, near), vertex(bs[i + 1]!, near), vertex(bs[i + 1]!, far), vertex(bs[i]!, far)];
+    const box = pavingMask(quad);
+    let pieces: PavingVertex[][] = [quad];
+    for (const mask of masks) {
+      if (mask.minX > box.maxX || mask.maxX < box.minX || mask.minZ > box.maxZ || mask.maxZ < box.minZ) continue;
+      pieces = pieces.flatMap(piece => clipPaving(piece, mask.polygon));
+      if (!pieces.length) break;
+    }
+    for (const poly of pieces) {
+      if (poly.length === 4) b.quad(point(poly[0]!), point(poly[1]!), point(poly[2]!), point(poly[3]!), WHITE, UP, poly.map(p => [p.u, p.v] as [number, number]));
+      else for (let j = 1; j + 1 < poly.length; j++) {
+        const tri = [poly[0]!, poly[j]!, poly[j + 1]!]; b.tri(point(tri[0]!), point(tri[1]!), point(tri[2]!), WHITE, UP, tri.map(p => [p.u, p.v] as [number, number]));
+      }
+    }
   }
 }
 
@@ -255,6 +290,12 @@ export function buildStreetscape(c: Ctx): StreetResult {
     const hw = p.hw;
     const id = p.road.id;
     const cutHere = cuts.get(p) ?? [];
+    const pavingMasks = c.obstacles.map(r => pavingMask([{ x: r.minX - .3, z: r.minZ - .3 }, { x: r.maxX + .3, z: r.minZ - .3 }, { x: r.maxX + .3, z: r.maxZ + .3 }, { x: r.minX - .3, z: r.maxZ + .3 }]));
+    for (const other of paths) if (other !== p) for (const seg of other.segs) {
+      const half = other.hw + .2, length = seg.s1 - seg.s0;
+      const ax = seg.ax - seg.dx * 2, az = seg.az - seg.dz * 2, bx = seg.ax + seg.dx * (length + 2), bz = seg.az + seg.dz * (length + 2);
+      pavingMasks.push(pavingMask([{ x: ax + seg.nx * half, z: az + seg.nz * half }, { x: bx + seg.nx * half, z: bz + seg.nz * half }, { x: bx - seg.nx * half, z: bz - seg.nz * half }, { x: ax - seg.nx * half, z: az - seg.nz * half }]));
+    }
     const offRoad = (margin: number) => (x: number, z: number): boolean => roadClearance(x, z, id).d < margin || inPlaza(x, z, 1.02) || steep(x, z);
     const yPave = Y_PAVE + 0.008 * rank.get(p)!;
     const offDecal = (x: number, z: number): boolean => inPlaza(x, z, 0.97) || steep(x, z);
@@ -270,7 +311,7 @@ export function buildStreetscape(c: Ctx): StreetResult {
       const phU = uvRnd();
       const phV = uvRnd();
       for (const run of freeRuns(p, side * (hw + 6), offDecal, 3)) {
-        strip(pave, p, run[0], run[1], side * (hw - SW_IN), side * (hw + SW_OUT), yPave, WHITE, (s, o) => [s / PAVE_U + phU, (Math.abs(o) - hw) / PAVE_V + phV]);
+        pavedStrip(pave, p, run[0], run[1], side, yPave, phU, phV, pavingMasks);
       }
       // kerb stones
       const kPhase = uvRnd();
@@ -359,6 +400,8 @@ export function buildStreetscape(c: Ctx): StreetResult {
   // ---- meshes -------------------------------------------------------------------------------------------------------------
   const paveMat = texMat(scene, 'streetPaveMat', T.paveTexture(scene), 1.3);
   const asphMat = texMat(scene, 'streetAsphaltMat', T.asphaltTexture(scene), 3.4);
+  // Weathered grey asphalt keeps the sun/shade boundary readable without changing the lights.
+  asphMat.diffuseColor.setAll(1.6);
   const kerbMat = texMat(scene, 'streetKerbMat', T.kerbTexture(scene), 0);
   const tacMat = texMat(scene, 'streetTactileMat', T.tactileLineTexture(scene), 1.6);
   const dotMat = texMat(scene, 'streetDotMat', T.tactileDotTexture(scene), 1.6);

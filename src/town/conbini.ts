@@ -1,3 +1,5 @@
+import { HeightPass, SHOP_HEIGHT_SCALE } from './height-pass';
+import { SURF } from '../surface';
 import type { Ctx } from './ctx';
 import type { Frame } from './frame';
 import { Kit, nobori, slice } from './kit';
@@ -8,16 +10,17 @@ import { hex, type Rect } from './util';
 // コンビニ「ひだまりマート」: a glass frontage with the bright shop behind it (ref2)
 
 export function addConbini(c: Ctx, rect: Rect, f: Frame, W: number, D: number): void {
+  const heightPass = new HeightPass(c);
   const k = new Kit(c, f);
   const P = 3.5;
   const FL = 4; // interior floor
   const CE = 41; // ceiling
-  const FT = 58; // top of the fascia band
+  const FT = 52.4; // top of a compact fascia band
   const WHITE = hex(0xe8edf0);
   const SIDE = hex(0xd9dfe3);
-  const ALU = hex(0x58606a);
+  const ALU = hex(0xaeb7b8);
   const GREEN = hex(0x14934a);
-  const BLUE = hex(0x1676c6);
+  const LOWER_GREEN = hex(0x237a65);
   const doorU0 = -2;
   const doorU1 = 28;
 
@@ -36,7 +39,8 @@ export function addConbini(c: Ctx, rect: Rect, f: Frame, W: number, D: number): 
   k.box(-W, -W + pier, P, CE, D - 4, D, WHITE);
   k.box(W - pier, W, P, CE, D - 4, D, WHITE);
   const jambs = [-58, -36, -14, doorU0, doorU1, 54];
-  for (const u of jambs) k.box(u - 0.9, u + 0.9, P, 38.4, D - 3.2, D - 0.2, ALU);
+  const frameSurface = k.m.surface; k.m.surface = SURF.paintedMetal;
+  for (const u of jambs) k.box(u - 0.45, u + 0.45, P, 38.4, D - 3.2, D - 0.2, ALU);
   k.box(-W + pier, W - pier, P, P + 1.4, D - 3.2, D - 0.2, ALU);
   k.box(-W + pier, W - pier, 36.8, 38.4, D - 3.2, D - 0.2, ALU);
   const edges = [-W + pier, ...jambs, W - pier];
@@ -46,6 +50,7 @@ export function addConbini(c: Ctx, rect: Rect, f: Frame, W: number, D: number): 
   k.box((doorU0 + doorU1) / 2 - 0.7, (doorU0 + doorU1) / 2 + 0.7, FL, 36.8, D - 3.4, D - 0.4, ALU);
   k.box(doorU0 - 1, doorU1 + 1, 33.8, 38.4, D - 4.4, D + 1.2, hex(0x3d434b)); // door operator
   k.box(8, 12, 32.6, 33.8, D - 0.6, D + 1.4, hex(0x23282e)); // sensor
+  k.m.surface = frameSurface;
   // mat at the entrance and a short ramp-like step
   k.box(doorU0 - 1, doorU1 + 1, P, P + 0.5, D + 1.2, D + 9, hex(0x2b3946));
   k.box(doorU0 - 2, doorU1 + 2, 0, P, D, D + 11, hex(0xc4c1b8));
@@ -54,11 +59,11 @@ export function addConbini(c: Ctx, rect: Rect, f: Frame, W: number, D: number): 
   const L = (a: number, b: number, y0: number, y1: number, col: readonly [number, number, number], vv = D + 3.5): void => k.ifa(a, b, y0, y1, vv, 1, col);
   k.box(-W - 1, W + 1, 38.4, FT, D - 3, D + 3, hex(0x6b7178)); // body of the band
   k.ibox(-W - 1, W + 1, 38.4, FT, D + 3, D + 3.4, [0.97, 0.98, 0.99], 'TFLR');
-  L(-W - 1, W + 1, FT - 4.4, FT - 0.4, GREEN);
-  L(-W - 1, W + 1, 38.8, 41.6, BLUE);
-  L(-W - 1, W + 1, 41.6, 42.6, GREEN);
-  k.tf(k.uv('ひだまりマート'), -52, -4, 42.9, 54.9, D + 3.45, 1);
-  k.tf(k.uv('ひだまりマート'), 30, 78, 42.9, 54.9, D + 3.45, 1);
+  L(-W - 1, W + 1, FT - 2.2, FT - .2, GREEN);
+  L(-W - 1, W + 1, 38.8, 40.8, LOWER_GREEN);
+  L(-W - 1, W + 1, 40.8, 41.3, GREEN);
+  k.tf(k.uv('ひだまりマート'), -44, -12, 41.7, 49.7, D + 3.45, 1);
+  k.tf(k.uv('ひだまりマート'), 38, 70, 41.7, 49.7, D + 3.45, 1);
   // hanging logo signs, turned to face along the street
   const blade = (u: number): void => {
     const v0 = D + 3.6;
@@ -121,6 +126,8 @@ export function addConbini(c: Ctx, rect: Rect, f: Frame, W: number, D: number): 
   k.ibox(34, 64, FL, 13, 4, 20, [0.95, 0.96, 0.97]);
   k.ibox(44, 52, 13, 17, 8, 16, [0.2, 0.22, 0.26]);
   k.ibox(34, 64, 13, 14, 4, 20, [0.4, 0.78, 0.5], 'T');
+
+  heightPass.applyAbove(FL, SHOP_HEIGHT_SCALE);
 
   // a planter beside the entrance
   const pu = doorU0 - 5;

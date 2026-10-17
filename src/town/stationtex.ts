@@ -1,4 +1,6 @@
-import { DynamicTexture, Texture, type Scene } from '@babylonjs/core';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture.js';
+import { type Scene } from '@babylonjs/core/scene.js';
 import { FONT_STACK } from './signs';
 import { makeRng } from './util';
 
@@ -63,7 +65,7 @@ function floorTexture(scene: Scene): DynamicTexture {
     for (let ty = 0; ty < n; ty++) {
       for (let tx = 0; tx < n; tx++) {
         const v = 0.93 + rnd() * 0.07;
-        g.fillStyle = `rgb(${Math.round(222 * v)},${Math.round(216 * v)},${Math.round(203 * v)})`;
+        g.fillStyle = `rgb(${Math.round(205 * v)},${Math.round(207 * v)},${Math.round(216 * v)})`;
         g.fillRect(tx * t, ty * t, t, t);
         // soft mottling
         for (let i = 0; i < 6; i++) {
@@ -74,12 +76,12 @@ function floorTexture(scene: Scene): DynamicTexture {
           g.fillRect(tx * t, ty * t, t, t);
         }
         // terrazzo chips
-        for (let i = 0; i < 90; i++) {
+        for (let i = 0; i < 60; i++) {
           const x = tx * t + rnd() * t;
           const y = ty * t + rnd() * t;
-          const r = 0.7 + rnd() * 1.7;
+          const r = 0.45 + rnd() * .65;
           const c = rnd();
-          g.fillStyle = c < 0.4 ? 'rgba(255,255,255,0.55)' : c < 0.75 ? 'rgba(128,118,104,0.35)' : 'rgba(190,160,130,0.35)';
+          g.fillStyle = c < 0.4 ? 'rgba(255,255,255,0.18)' : c < 0.75 ? 'rgba(125,130,145,0.12)' : 'rgba(170,160,175,0.10)';
           g.beginPath();
           g.arc(x, y, r, 0, Math.PI * 2);
           g.fill();
@@ -88,8 +90,8 @@ function floorTexture(scene: Scene): DynamicTexture {
     }
     // joints (half widths at the borders so that the texture tiles seamlessly)
     for (let k = 0; k <= n; k++) {
-      g.strokeStyle = 'rgba(112,104,92,0.75)';
-      g.lineWidth = 3;
+      g.strokeStyle = 'rgba(115,120,135,0.48)';
+      g.lineWidth = 1.5;
       g.beginPath();
       g.moveTo(k * t, 0);
       g.lineTo(k * t, 512);
@@ -122,7 +124,7 @@ function ceilingTexture(scene: Scene): DynamicTexture {
         g.fillStyle = `rgb(${Math.round(250 * v)},${Math.round(250 * v)},${Math.round(247 * v)})`;
         g.fillRect(tx * t + 3, ty * t + 3, t - 6, t - 6);
         // fine perforations
-        g.fillStyle = 'rgba(120,120,125,0.22)';
+        g.fillStyle = 'rgba(120,120,125,0.09)';
         for (let y = 10; y < t - 8; y += 7) {
           for (let x = 10 + ((y / 7) % 2) * 3; x < t - 8; x += 7) g.fillRect(tx * t + x, ty * t + y, 1.4, 1.4);
         }
@@ -154,20 +156,20 @@ function ceilingTexture(scene: Scene): DynamicTexture {
 function wallPanelTexture(scene: Scene): DynamicTexture {
   return makeTexture(scene, 'stationWall', 256, 256, (g) => {
     const rnd = makeRng(7103);
-    g.fillStyle = '#f4efe4';
+    g.fillStyle = '#d9d6dc';
     g.fillRect(0, 0, 256, 256);
     for (let i = 0; i < 60; i++) {
       const x = rnd() * 256;
       const y = rnd() * 256;
       const r = 16 + rnd() * 34;
       const gr = g.createRadialGradient(x, y, 0, x, y, r);
-      gr.addColorStop(0, `rgba(${rnd() < 0.5 ? '255,255,255' : '190,176,150'},${0.07 + rnd() * 0.06})`);
+      gr.addColorStop(0, `rgba(${rnd() < 0.5 ? '255,255,255' : '165,160,180'},${0.07 + rnd() * 0.06})`);
       gr.addColorStop(1, 'rgba(255,255,255,0)');
       g.fillStyle = gr;
       g.fillRect(x - r, y - r, r * 2, r * 2);
     }
     for (const x of [0, 128, 256]) {
-      g.fillStyle = 'rgba(120,110,95,0.2)';
+      g.fillStyle = 'rgba(120,120,135,0.13)';
       g.fillRect(x - 1.5, 0, 3, 256);
       g.fillStyle = 'rgba(255,255,255,0.4)';
       g.fillRect(x + 1.5, 0, 2, 256);
@@ -1011,6 +1013,7 @@ function atlasItems(): AtlasItem[] {
     { name: 'binCan', w: 128, h: 96, draw: binLabel('かん・びん', 'Cans / Bottles', '#1f6fb8') },
     { name: 'binPet', w: 128, h: 96, draw: binLabel('ペットボトル', 'PET bottles', '#1f9a58') },
     { name: 'binPaper', w: 128, h: 96, draw: binLabel('新聞・雑誌', 'Paper', '#d9a21a', '#2a1f00') },
+    { name: 'officeWindowSign', w: 384, h: 96, draw: drawSignGreen('駅務室 窓口', 'Station Office') },
   ];
 }
 

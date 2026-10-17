@@ -1,6 +1,8 @@
-import type { MeshBatch } from './batch';
+import { MeshBatch } from './batch';
 import type { Ctx } from './ctx';
 import type { Frame } from './frame';
+import { hvacUnit, waterTank } from './facade';
+import { houseRng } from './housekit';
 import { HB, Wall, tone } from './housekit';
 import { hex, type RGB } from './util';
 
@@ -107,20 +109,16 @@ export function parapet(b: MeshBatch, f: Frame, hu: number, hv: number, y: numbe
   h.flat(hu - t, hu, -hv + t, hv - t, top, color);
 }
 
-export function rooftopStuff(c: Ctx, f: Frame, hu: number, hv: number, y: number, count = 3): void {
-  const b = c.main.at(f.cx, f.cz);
+export function rooftopStuff(c: Ctx, f: Frame, hu: number, hv: number, y: number, count = 3, visible = true): void {
+  // Consume the same town RNG for pitched roofs, while leaving their covered equipment out of the mesh.
+  const b = visible ? c.main.at(f.cx, f.cz) : new MeshBatch();
   const h = new HB(b, f);
   const r = c.rnd;
   for (let i = 0; i < count; i++) {
     const u = (r() * 2 - 1) * (hu - 22);
     const v = (r() * 2 - 1) * (hv - 22);
-    if (r() < 0.5) {
-      h.box(u - 7, u + 7, y, y + 9, v - 6, v + 6, hex(0xc9ccd2), 'fblrt');
-      h.box(u - 5, u + 5, y + 9, y + 10, v - 4, v + 4, hex(0x8a8e96), 'fblrt');
-    } else {
-      const p = f.pt(u, y, v);
-      h.prism(p[0], p[2], y, y + 14, 5, 5, 8, hex(0xb9a48a), false);
-      h.prism(p[0], p[2], y + 14, y + 18, 5, 1, 8, hex(0x8a735a), true);
-    }
+    const local = houseRng([u, v, y], f.cx, f.cz);
+    if (r() < 0.5) hvacUnit(h, u, v, y, 7, 6, 9, local);
+    else waterTank(h, u, v, y, 5, 11, local);
   }
 }

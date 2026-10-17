@@ -1,9 +1,11 @@
+import { SURF } from '../surface';
+import { detailedBlock } from './block';
 import type { Ctx } from './ctx';
 import { DEC1_Y, DEC2_Y, DEC3_Y } from './ctx';
 import { Frame } from './frame';
 import type { Lot } from './layout';
 import { addCherry } from './trees';
-import { windowGrid, windowOn, roofSign, signOnFace, parapet, rooftopStuff, GLASS } from './parts';
+import { windowOn, roofSign, signOnFace, parapet, rooftopStuff, GLASS } from './parts';
 import { hex, shade, type RGB, type Rect } from './util';
 
 export function frameRect(f: Frame, u0: number, u1: number, v0: number, v1: number): Rect {
@@ -19,8 +21,7 @@ export function addBank(c: Ctx, lot: Lot, rect: Rect, f: Frame, hu: number, hv: 
   const H = 4 + lot.floors * floorH;
   const bodyV = hv - 22;
   f.box(b, -hu, hu, 0, 4, -hv, hv, hex(0xa9a69e));
-  f.box(b, -hu + 6, hu - 6, 4, H, -hv, bodyV, wall);
-  windowGrid(b, f, hu - 6, bodyV, 4, floorH, lot.floors, { w: 18, h: 22, spacing: 40, skipFront: (fl) => fl < 1 });
+  detailedBlock(c, f, -hu + 6, hu - 6, -hv, bodyV, 4, lot.floors, floorH, wall, SURF.stone, true);
   // the window grid is positioned relative to the frame centre, so shift not needed (symmetrical box)
   // portico with columns
   const pu = Math.min(hu - 16, 90);
@@ -48,34 +49,11 @@ export function addHospital(c: Ctx, lot: Lot, _rect: Rect, f: Frame, hu: number,
   const floorH = 36;
   const H = 4 + lot.floors * floorH;
   f.box(b, -hu, hu, 0, 4, -hv, hv, hex(0xa9a69e));
-  f.box(b, -hu, hu, 4, H, -hv, hv * 0.55, wall);
+  detailedBlock(c, f, -hu, hu, -hv, hv * .55, 4, lot.floors, floorH, wall, SURF.panel);
   for (let i = 1; i < lot.floors; i++) f.box(b, -hu - 0.5, hu + 0.5, 4 + i * floorH - 4, 4 + i * floorH - 1, -hv - 0.5, hv * 0.55 + 0.5, hex(0x6cb8e0));
   // windows on the main block, built per face with the block's real depth
   // front wing (entrance block) shifted forward
-  f.box(b, -hu * 0.45, hu * 0.45, 4, H + 2 * floorH, hv * 0.55, hv, wall);
-  // windows: front block and main block
-  const fb = (face: 'f' | 'b' | 'l' | 'r', pos: number, y: number): void => {
-    windowOn(b, f, hu, hv * 0.55, face, pos, y, 18, 20, GLASS);
-  };
-  const nU = Math.floor((hu * 2 - 20) / 36);
-  for (let fl = 0; fl < lot.floors; fl++) {
-    const y = 4 + fl * floorH + 8;
-    for (let i = 0; i < nU; i++) {
-      const u = -hu + ((i + 0.5) * 2 * hu) / nU;
-      if (Math.abs(u) < hu * 0.45 + 10 && fl < lot.floors + 2) continue;
-      fb('f', u, y);
-      fb('b', u, y);
-    }
-  }
-  // tower front windows
-  const tf = hu * 0.45;
-  for (let fl = 0; fl < lot.floors + 2; fl++) {
-    const y = 4 + fl * floorH + 8;
-    for (const u of [-tf * 0.7, 0, tf * 0.7]) {
-      if (fl === 0 && Math.abs(u) < 5) continue;
-      windowOn(b, f, tf, hv, 'f', u, y, 18, 20, GLASS);
-    }
-  }
+  detailedBlock(c, f, -hu * .45, hu * .45, hv * .55, hv, 4, lot.floors + 2, floorH, wall, SURF.panel, true);
   // entrance + canopy
   f.facade(b, -14, 14, 4, 30, hv + 0.7, 1, hex(0x3a4a58));
   f.facade(b, -12, 12, 5, 28, hv + 1.0, 1, hex(0xbfe0f0));
@@ -122,38 +100,11 @@ export function addCampus(c: Ctx, lot: Lot, _rect: Rect, f: Frame, hu: number, h
   }
   for (const p of parts) {
     f.box(b, p.u0 - 1, p.u1 + 1, 0, 4, p.v0 - 1, p.v1 + 1, hex(0xa9a69e));
-    f.box(b, p.u0, p.u1, 4, H, p.v0, p.v1, wall);
+    detailedBlock(c, f, p.u0, p.u1, p.v0, p.v1, 4, fl, floorH, wall, school ? SURF.concrete : SURF.tile);
     f.box(b, p.u0 - 0.5, p.u1 + 0.5, H - 6, H, p.v0 - 0.5, p.v1 + 0.5, trim);
     for (let i = 1; i < fl; i++) f.box(b, p.u0 - 0.4, p.u1 + 0.4, 4 + i * floorH - 2, 4 + i * floorH, p.v0 - 0.4, p.v1 + 0.4, shade(wall, 0.9));
     c.obstacles.push(frameRect(f, p.u0, p.u1, p.v0, p.v1));
   }
-  // windows
-  const winRows = (u0: number, u1: number, v0: number, v1: number, faces: ('f' | 'b' | 'l' | 'r')[]): void => {
-    const cu = (u0 + u1) / 2;
-    const cv = (v0 + v1) / 2;
-    const hw = (u1 - u0) / 2;
-    const hd = (v1 - v0) / 2;
-    for (const face of faces) {
-      const len = face === 'f' || face === 'b' ? hw * 2 : hd * 2;
-      const n = Math.max(1, Math.floor((len - 16) / 34));
-      for (let k = 0; k < fl; k++) {
-        const y = 4 + k * floorH + 8;
-        for (let i = 0; i < n; i++) {
-          const pos = -len / 2 + ((i + 0.5) * len) / n;
-          if (face === 'f') f.facade(b, cu + pos - 9, cu + pos + 9, y, y + 20, v1 + 0.5, 1, hex(0xf7f7f4));
-          else if (face === 'b') f.facade(b, cu + pos - 9, cu + pos + 9, y, y + 20, v0 - 0.5, -1, hex(0xf7f7f4));
-          else if (face === 'r') f.side(b, cv + pos - 9, cv + pos + 9, y, y + 20, u1 + 0.5, 1, hex(0xf7f7f4));
-          else f.side(b, cv + pos - 9, cv + pos + 9, y, y + 20, u0 - 0.5, -1, hex(0xf7f7f4));
-          // glass
-          if (face === 'f') f.facade(b, cu + pos - 7.5, cu + pos + 7.5, y + 1.5, y + 18.5, v1 + 0.9, 1, GLASS);
-          else if (face === 'b') f.facade(b, cu + pos - 7.5, cu + pos + 7.5, y + 1.5, y + 18.5, v0 - 0.9, -1, GLASS);
-          else if (face === 'r') f.side(b, cv + pos - 7.5, cv + pos + 7.5, y + 1.5, y + 18.5, u1 + 0.9, 1, GLASS);
-          else f.side(b, cv + pos - 7.5, cv + pos + 7.5, y + 1.5, y + 18.5, u0 - 0.9, -1, GLASS);
-        }
-      }
-    }
-  };
-  for (const p of parts) winRows(p.u0, p.u1, p.v0, p.v1, big && p !== parts[0] ? ['l', 'r'] : ['f', 'b', 'l', 'r']);
   // central clock tower on the back bar
   const tH = H + 3 * floorH;
   const tw = 34;

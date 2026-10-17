@@ -1,3 +1,5 @@
+import { foliageCluster } from './leaf';
+import { SPAWN } from './layout';
 import type { Ctx } from './ctx';
 import { DEC1_Y, DEC2_Y } from './ctx';
 import { Frame } from './frame';
@@ -370,9 +372,16 @@ export function addHouse(c: Ctx, rect: Rect, f: Frame, hu: number, hv: number, f
   const rnd = houseRng([wallPick, roofPick, dRidge, dChimney, dDoorSide, dDoorCol, dBalcony], f.cx, f.cz);
   const { doorU } = buildHouse({ c, f, hu, hv, floors, rich: true, wallPick, roofPick, doorPick: dDoorCol, ridgeU, doorSide, balcony: floors >= 2 && dBalcony < 0.7, rnd });
 
+  // Record a real front gate without consuming any additional town randomness.
+  const gate = f.pt(doorU, 0, hv + 18);
+  const home = c.home;
+  if (!home || Math.hypot(gate[0] - SPAWN.x, gate[2] - SPAWN.z) < Math.hypot(home.x - SPAWN.x, home.z - SPAWN.z)) {
+    c.home = { x: gate[0], z: gate[2] };
+  }
   // garden: a bush at the front corner and sometimes a tree
   const bp = f.pt(-doorU, 0, hv + 5);
   c.main.at(f.cx, f.cz).blob(bp[0], 5, bp[2], 9, 6, 7, GREEN_LEAF, 0.12, bp[0]);
+  if (c.foliage) foliageCluster(c.foliage.at(bp[0], bp[2]), bp[0], 6, bp[2], 9, .7, 'hedgeA', (bp[0] + bp[2]) % Math.PI);
   const t = r();
   const tp = f.pt((r() < 0.5 ? -1 : 1) * (hu - 6), 0, -hv + 8);
   if (t < 0.3) addCherry(c, tp[0], tp[2], 0.75 + r() * 0.2);

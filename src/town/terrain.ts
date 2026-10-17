@@ -1,18 +1,22 @@
-import { Color3, Mesh, StandardMaterial, VertexData, type Scene } from '@babylonjs/core';
+import { Color3 } from '@babylonjs/core/Maths/math.color.js';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData.js';
+import { type Scene } from '@babylonjs/core/scene.js';
 import { BEACH_WIDTH, coastS, coastVertexXs, coastZ, groundHeightAt, mountainT, SEA_Y } from './heights';
 import { hash2, hex, mix, smoothstep01, type RGB } from './util';
 
 export * from './heights';
 
 // --- colours ----------------------------------------------------------------------------------
-const GRASS = hex(0x93c46b);
-const GRASS_DARK = hex(0x7fb35c);
+const GRASS = hex(0x9caf80);
+const GRASS_DARK = hex(0x879b70);
 const SAND = hex(0xf0dcaa);
 const WET_SAND = hex(0xcdb88a);
 const SHALLOW = hex(0x9fd6cf);
 const DEEP = hex(0x2f6f9f);
-const FOREST = hex(0x3e8a45);
-const FOREST_HIGH = hex(0x56a050);
+const FOREST = hex(0x557951);
+const FOREST_HIGH = hex(0x749268);
 
 function groundColor(x: number, z: number): RGB {
   const s = coastS(x, z);

@@ -1,4 +1,6 @@
-import { type Bone, Quaternion, Space, Vector3 } from '@babylonjs/core';
+import { type Bone } from '@babylonjs/core/Bones/bone.js';
+import { Quaternion, Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { Space } from '@babylonjs/core/Maths/math.axis.js';
 
 /**
  * Procedural walk cycle for a standard MMD bone rig.
@@ -34,6 +36,8 @@ export class Gait {
   private readonly armR: Bone;
   private readonly elbowL: Bone | null;
   private readonly elbowR: Bone | null;
+  private readonly hipRest: Vector3;
+  private readonly thighLength: number;
   readonly state: GaitState = { phase: 0, blend: 0 };
   private time = 0;
 
@@ -60,6 +64,27 @@ export class Gait {
     this.armR = need('右腕');
     this.elbowL = find('左ひじ');
     this.elbowR = find('右ひじ');
+    const hip = find('左足');
+    let hipMatrix = hip?.getRestMatrix().clone();
+    for (let parent = hip?.getParent(); parent && hipMatrix; parent = parent.getParent()) hipMatrix = hipMatrix.multiply(parent.getRestMatrix());
+    this.hipRest = hipMatrix?.getTranslation() ?? new Vector3(0, 11, 0);
+    this.thighLength = find('左ひざ')?.getRestMatrix().getTranslation().length() ?? 4.5;
+  }
+
+  /** Lower the pelvis onto the seat and bring both grounded foot IK targets forward. */
+  sit(dt: number, seatHeight: number): void {
+    this.time += dt;
+    this.state.blend = 0;
+    this.state.phase = 0;
+    this.center.position = this.centerRest.add(new Vector3(0, seatHeight + 0.5 - this.hipRest.y, 0));
+    for (const foot of [this.left, this.right]) {
+      foot.ik.position = new Vector3(foot.rest.x, foot.rest.y, this.hipRest.z - this.thighLength * 0.95);
+    }
+    this.upper?.setRotationQuaternion(Quaternion.FromEulerAngles(0.04 + 0.01 * Math.sin(this.time * 2.2), 0, 0), Space.LOCAL);
+    for (const [arm, elbow, side] of [[this.armL, this.elbowL, 1], [this.armR, this.elbowR, -1]] as const) {
+      arm.setRotationQuaternion(Quaternion.RotationAxis(Vector3.Right(), 0.35).multiply(Quaternion.RotationAxis(Vector3.Forward(), -side * Math.PI * 0.39)), Space.LOCAL);
+      elbow?.setRotationQuaternion(Quaternion.RotationAxis(Vector3.Up(), side * 0.8), Space.LOCAL);
+    }
   }
 
   /**

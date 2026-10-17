@@ -43,3 +43,191 @@ body {
   user-select: none;
   white-space: nowrap;
 }
+
+.life-ui {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  color: #28473f;
+  font: 14px/1.6 system-ui, sans-serif;
+}
+
+.life-ui button {
+  pointer-events: auto;
+  border: 1px solid #b9cabc;
+  border-radius: 10px;
+  padding: 9px 14px;
+  color: #28473f;
+  background: #fffdf5;
+  font: inherit;
+  cursor: pointer;
+}
+
+.life-ui button:hover:not(:disabled) { background: #e7f0df; }
+.life-ui button:focus-visible { outline: 3px solid #356b69; outline-offset: 3px; }
+.life-ui button:disabled { opacity: .6; cursor: default; }
+
+.life-bar {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  left: 230px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.life-bar strong, .life-brand, .life-save-status {
+  padding: 5px 10px;
+  background: #fffdf5ed;
+  border-radius: 10px;
+}
+.life-brand { margin-right: auto; font-weight: 600; }
+.life-save-status { font-size: 11px; }
+
+.life-sidebar {
+  position: absolute;
+  top: 64px;
+  left: 12px;
+  display: grid;
+  gap: 10px;
+  width: min(280px, calc(100% - 24px));
+  max-height: calc(100dvh - 240px);
+  overflow-y: auto;
+}
+.life-goal {
+  padding: 15px 19px;
+  border: 1px solid #e7ddce;
+  border-radius: 16px;
+  background: #fffdf5ed;
+  box-shadow: 0 6px 24px #26392d16;
+}
+.life-goal strong { font-size: 16px; }
+.life-goal ol { list-style: none; padding: 0; margin: 10px 0; }
+.life-goal li { margin: 4px 0; }
+.life-goal .complete { color: #537153; }
+.life-goal small { color: #69786b; }
+.life-goal p { margin: 10px 0; }
+
+.life-navigation {
+  margin: 0;
+  padding: 9px 14px;
+  border-radius: 12px;
+  background: #fffdf5e8;
+  font-size: 12px;
+}
+.life-rest-status { margin: 0; padding: 12px 14px; border-radius: 12px; background: #e7f0dff5; font-size: 12px; }
+.life-rest-status:empty { display: none; }
+
+.life-ui .life-interact {
+  position: absolute;
+  bottom: 102px;
+  left: 50%;
+  transform: translateX(-50%);
+  box-shadow: 0 4px 16px #273f3220;
+  white-space: nowrap;
+}
+.life-ui .life-interact:not(:disabled) { color: white; background: #356b59; border-color: #356b59; }
+.life-ui .life-interact:hover:not(:disabled) { background: #254d40; }
+
+.life-notice {
+  position: absolute;
+  bottom: 46px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(640px, calc(100% - 48px));
+  width: max-content;
+  padding: 8px 14px;
+  margin: 0;
+  border-radius: 12px;
+  background: #fffdf5ed;
+  text-align: center;
+}
+.life-notice:empty { display: none; }
+
+.life-dialog {
+  pointer-events: auto;
+  width: min(440px, calc(100% - 72px));
+  max-height: calc(100dvh - 80px);
+  overflow-y: auto;
+  padding: 26px;
+  border: 1px solid #dfd7c6;
+  border-radius: 20px;
+  color: #28473f;
+  background: #fffdf5;
+  box-shadow: 0 15px 80px #182d3a44;
+}
+.life-dialog::backdrop { background: #1b35444d; }
+.life-dialog h2 { margin: 0 0 16px; font-size: 22px; }
+.life-dialog p { line-height: 1.9; }
+.life-dialog small { color: #677367; }
+.life-products { display: grid; gap: 10px; margin: 18px 0; }
+.life-products button { text-align: left; }
+.life-ui .life-close { margin-top: 12px; background: #e5ecdF; }
+.life-request { margin-top: 18px; padding-top: 12px; border-top: 1px solid #dfd7c6; }
+.life-request h3 { margin: 0 0 10px; font-size: 16px; }
+
+.life-dialog-map { width: min(1000px, calc(100% - 72px)); }
+.life-map-layout { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 20px; align-items: start; }
+.life-map { display: block; width: 100%; border: 1px solid #dfd7c6; border-radius: 12px; }
+.life-map-label { fill: #455e54; font: 28px system-ui, sans-serif; }
+.life-map-number { fill: white; font: bold 29px system-ui, sans-serif; }
+.life-map-places { display: grid; gap: 8px; }
+.life-map-places button { text-align: left; }
+.life-map-places button[aria-pressed="true"] { border: 2px solid #356b59; background: #e7f0df; }
+.life-map-places .life-map-delivery { color: #873e29; }
+
+@media (max-width: 720px) {
+  .life-bar { left: 12px; top: 40px; gap: 5px; font-size: 12px; }
+  .life-brand { display: none; }
+  .life-bar button { padding: 6px 8px; }
+  .life-save-status { width: 100%; text-align: right; background: transparent; }
+  .life-sidebar { top: 128px; width: min(260px, calc(100% - 24px)); max-height: calc(100dvh - 320px); }
+  .life-goal { font-size: 12px; padding: 10px 14px; }
+  #help { white-space: normal; width: calc(100% - 40px); text-align: center; font-size: 11px; }
+  .life-notice { bottom: 70px; font-size: 12px; }
+  .life-ui .life-interact { bottom: 150px; font-size: 12px; }
+  .life-map-layout { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+}
+
+.life-clock { padding: 5px 10px; border-radius: 10px; background: #fffdf5ed; font-size: 12px; }
+.life-dialog > div > button { margin: 6px 8px 6px 0; }
+.life-dialog label { display: flex; align-items: center; gap: 12px; margin: 16px 0; }
+.life-dialog input[type=range] { flex: 1; accent-color: #356b59; }
+.touch-controls { position: fixed; bottom: max(22px, env(safe-area-inset-bottom)); left: max(18px, env(safe-area-inset-left)); display: flex; align-items: end; gap: 14px; user-select: none; z-index: 1; }
+.touch-pad { width: 112px; height: 112px; border: 2px solid #fff9; background: #28473f4d; border-radius: 50%; touch-action: none; display: grid; place-items: center; }
+.touch-knob { display: block; width: 42px; height: 42px; background: #fffdf5d9; border-radius: 50%; pointer-events: none; }
+.touch-controls button { padding: 15px; border: 1px solid #c8d8cb; border-radius: 50%; background: #fffdf5e6; color: #28473f; min-width: 55px; min-height: 55px; }
+.touch-controls button[aria-pressed=true] { color: white; background: #356b59; }
+body:has(dialog[open]) .touch-controls { visibility: hidden; }
+@media (max-width: 720px) {
+  .life-bar { gap: 4px; }
+  .life-clock { padding: 3px 5px; font-size: 11px; }
+  .life-sidebar { top: 155px; max-height: calc(100dvh - 410px); width: min(240px, calc(100% - 24px)); }
+}
+@media (pointer: coarse) {
+  #help { display: none; }
+  .life-notice { bottom: 170px; }
+  .life-ui .life-interact { bottom: 225px; max-width: calc(100% - 30px); white-space: normal; }
+}
+
+/* Keep the main touch targets reachable in both phone orientations. Other actions remain in Settings. */
+@media (pointer: coarse) {
+  .life-bar .life-secondary { display: none; }
+  .life-bar button, .life-dialog button { min-height: 44px; }
+  .life-ui .life-interact { min-height: 44px; }
+  .life-sidebar { top: 176px; max-height: calc(100dvh - 440px); }
+}
+@media (pointer: coarse) and (max-height: 500px) {
+  .life-bar { top: 6px; left: 8px; right: 8px; font-size: 11px; gap: 4px; }
+  .life-bar button { padding: 5px 8px; }
+  .life-brand, .life-save-status, .life-goal { display: none; }
+  .life-sidebar { top: 60px; left: auto; right: 8px; width: min(300px, 40vw); max-height: calc(100dvh - 200px); }
+  .life-ui .life-interact { bottom: 80px; left: auto; right: 12px; transform: none; max-width: min(300px, 45vw); }
+  .life-notice { bottom: 6px; left: 235px; right: 10px; transform: none; max-width: none; width: auto; font-size: 11px; }
+  .touch-controls { bottom: 12px; }
+  .touch-pad { width: 96px; height: 96px; }
+  .life-dialog { max-height: calc(100dvh - 32px); padding: 16px; }
+}

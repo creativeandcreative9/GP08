@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { heightAt } from '../src/town/heights';
 import { PLATFORM, platformObstacles } from '../src/town/platform';
-import { GATES, stationObstacles } from '../src/town/stationplan';
+import { GATES, OFFICE, stationObstacles } from '../src/town/stationplan';
 import { SPAWN } from '../src/town/layout';
 
 // Pure-function checks (no browser): the station platforms are walkable, continuous and solid.
@@ -174,8 +174,11 @@ test('every gate lane and the wide lane can be walked through to the platform si
 
 test('from the gates the player reaches the platform through the doorways in the back wall', () => {
   for (const x of [-60, 0]) {
-    const r = walkHall(x, 650, x, 760);
-    expect(r.maxJump, `x ${x}`).toBeLessThanOrEqual(1.5);
+    // Use the central lane, then turn behind the office towards either platform doorway.
+    const gate = walkHall(0, 650, 0, 699);
+    const across = walkHall(gate.x, gate.z, x, 699);
+    const r = walkHall(across.x, across.z, x, 760);
+    expect(Math.max(gate.maxJump, across.maxJump, r.maxJump), `x ${x}`).toBeLessThanOrEqual(1.5);
     expect(r.z, `x ${x}`).toBeGreaterThan(740);
     expect(r.h).toBe(PLATFORM.h);
   }
@@ -206,4 +209,13 @@ test('walls, gate machines, booth and fences are solid', () => {
     maxJump = Math.max(maxJump, walkHall(sx, sz, sx + Math.cos(a) * 200, sz + Math.sin(a) * 200).maxJump);
   }
   expect(maxJump).toBeLessThanOrEqual(1.5);
+});
+
+
+test('the new office counter is solid and leaves a route from the entrance through the central gates', () => {
+  const x = (OFFICE.x0 + OFFICE.x1) / 2;
+  expect(walkHall(x, 640, x, 700).z).toBeLessThanOrEqual(OFFICE.z0);
+  const through = walkHall(0, 640, 0, 700);
+  expect(through.z).toBeGreaterThan(699);
+  expect(through.maxJump).toBeLessThanOrEqual(1.5);
 });

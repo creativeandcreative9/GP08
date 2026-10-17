@@ -84,6 +84,7 @@ function privateAssets(): Plugin {
 }
 
 export default defineConfig({
+  base: './',
   plugins: [privateAssets()],
   // .claude/ holds agent worktrees (other checkouts of this repository): don't watch them
   server: { port: PORT, host: '127.0.0.1', strictPort: true, watch: { ignored: ['**/.claude/**'] } },

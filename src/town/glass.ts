@@ -1,9 +1,17 @@
-import { Color3, DynamicTexture, StandardMaterial, Texture, type Scene } from '@babylonjs/core';
+import { reflectedTownFaces } from './atmosphere';
+import { Constants } from '@babylonjs/core/Engines/constants.js';
+import { FresnelParameters } from '@babylonjs/core/Materials/fresnelParameters.js';
+import { RawCubeTexture } from '@babylonjs/core/Materials/Textures/rawCubeTexture.js';
+import { Color3 } from '@babylonjs/core/Maths/math.color.js';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture.js';
+import { type Scene } from '@babylonjs/core/scene.js';
 
 /**
  * The material for window panes: nearly clear glass with a light blue tint, a few soft diagonal reflection streaks
  * (tiled every ~140 world units along the pane, so neighbouring panes continue the same reflection) and a faint
- * sun glint. The final opacity is `texture alpha x vertex alpha`; the vertex alpha lets a pane be a little more
+ * sun glint. The final opacity is `material alpha x texture alpha x vertex alpha`; the vertex alpha lets a pane be a little more
  * mirror-like at the top (sky) than at the bottom.
  */
 export function createGlassMaterial(scene: Scene): StandardMaterial {
@@ -42,12 +50,18 @@ export function createGlassMaterial(scene: Scene): StandardMaterial {
   tex.update(true);
 
   const m = new StandardMaterial('glassMat', scene);
+  m.alpha = .75;
   m.diffuseTexture = tex;
   m.useAlphaFromDiffuseTexture = true;
   m.diffuseColor = Color3.White();
   m.specularColor = new Color3(0.85, 0.92, 1);
   m.specularPower = 110;
   m.emissiveColor = new Color3(0.06, 0.08, 0.1);
+  const reflection = new RawCubeTexture(scene, reflectedTownFaces(), 128, Constants.TEXTUREFORMAT_RGBA, Constants.TEXTURETYPE_UNSIGNED_BYTE, true, false, Texture.TRILINEAR_SAMPLINGMODE);
+  reflection.level = .28;
+  m.reflectionTexture = reflection;
+  const fresnel = new FresnelParameters(); fresnel.bias = .05; fresnel.power = 3;
+  fresnel.leftColor = Color3.White(); fresnel.rightColor = new Color3(.08, .08, .08); m.reflectionFresnelParameters = fresnel;
   m.backFaceCulling = false;
   m.twoSidedLighting = true;
   return m;

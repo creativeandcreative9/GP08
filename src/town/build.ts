@@ -1,9 +1,18 @@
-import { Color3, Mesh, StandardMaterial, TransformNode, type Scene } from '@babylonjs/core';
+import { Color3 } from '@babylonjs/core/Maths/math.color.js';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
+import { type Scene } from '@babylonjs/core/scene.js';
 import { ChunkedBatch, MeshBatch } from './batch';
 import type { Ctx, Spot } from './ctx';
 import { LOTS } from './layout';
-import { buildFurniture } from './furniture';
+import { addNeighbourhoodDetails, buildFurniture } from './furniture';
 import { buildInfill } from './infill';
+import { buildGreenery } from './greenery';
+import { foliageMaterial } from './leaf';
+import { BlossomClouds } from './blossoms';
+import { ClothBanners } from './cloth';
+import { quality } from '../render';
 import { createGlassMaterial } from './glass';
 import { buildLots } from './lots';
 import { SMALL_SHOPS } from './shops';
@@ -32,6 +41,8 @@ export interface Town {
   report: readonly string[];
   /** Built named shops by lot id (centre, front direction, half sizes), for camera presets. */
   spots: Readonly<Record<string, Spot>>;
+  home?: { x: number; z: number };
+  lamps?: readonly { x: number; y: number; z: number }[];
   /** Eye position in a back alley looking at a hidden open lot (direction dx,dz), if one was built. */
   alleyLookout?: { x: number; z: number; dx: number; dz: number };
 }
@@ -60,6 +71,10 @@ export function buildTown(scene: Scene): Town {
     scene,
     main: new ChunkedBatch(900),
     forest: new ChunkedBatch(1800),
+    foliage: new ChunkedBatch(900, true),
+    blossoms: new BlossomClouds(),
+    cloth: new ClothBanners(),
+    topiary: new ChunkedBatch(900),
     signs: new ChunkedBatch(900, true),
     glass: new ChunkedBatch(900, true),
     dec0: new MeshBatch(),
@@ -68,6 +83,7 @@ export function buildTown(scene: Scene): Town {
     dec3: new MeshBatch(),
     atlas: new SignAtlas(scene, labels),
     obstacles: [],
+    lamps: [],
     spots: {},
     report: [],
     rnd: makeRng(20260415),
@@ -80,7 +96,7 @@ export function buildTown(scene: Scene): Town {
   let last = 0;
   const budget: string[] = [];
   const mark = (name: string): void => {
-    const now = c.main.vertexCount + c.forest.vertexCount + c.signs.vertexCount + c.glass.vertexCount;
+    const now = c.main.vertexCount + c.forest.vertexCount + c.signs.vertexCount + c.glass.vertexCount + c.topiary!.vertexCount + c.cloth!.batches.vertexCount;
     budget.push(`${name} ${now - last}`);
     last = now;
   };
@@ -106,11 +122,13 @@ export function buildTown(scene: Scene): Town {
   mark('avenues');
   const poles = buildPoles(c);
   mark('poles+wires');
-  buildFurniture(c);
+  const furniture = buildFurniture(c);
   mark('furniture');
   const forest = buildForest(c, trail);
   mark('forest');
   const street = buildStreetscape(c);
+  buildGreenery(c);
+  addNeighbourhoodDetails(c, furniture);
   budget.push(`street ${street.vertices}`);
   c.report.push(`vertices by stage: ${budget.join(', ')}`);
   c.report.push(`sign atlas: ${c.atlas.usage}`);
@@ -123,10 +141,15 @@ export function buildTown(scene: Scene): Town {
   const d3 = vertexColourMaterial(scene, 'decal3', -4, -8);
   const glassMeshes = c.glass.toMeshes('glass', scene, createGlassMaterial(scene));
   for (const m of glassMeshes) m.hasVertexAlpha = true; // panes fade from a mirror-like top to a clearer bottom
+  const topiaryMeshes = c.topiary!.toMeshes('topiary', scene, mainMat);
+  for (const m of topiaryMeshes) m.metadata = { shadowNormalBias: .14 };
   const meshes: Mesh[] = [
     ...c.main.toMeshes('town', scene, mainMat),
+    ...topiaryMeshes,
     ...c.forest.toMeshes('forest', scene, mainMat),
+    ...c.blossoms!.build(scene, c.foliage!, foliageMaterial(scene), quality(scene.getEngine()) === 'high'),
     ...c.signs.toMeshes('signs', scene, c.atlas.material),
+    ...c.cloth!.build(scene, c.atlas.material),
     ...street.meshes,
     ...glassMeshes,
     c.dec0.toMesh('decals0', scene, d0),
@@ -150,5 +173,5 @@ export function buildTown(scene: Scene): Town {
   }
   c.report.push(`town meshes: ${meshes.length + 2} (+ sky), vertices ${verts}, triangles ${tris}, built in ${Math.round(performance.now() - t0)} ms`);
 
-  return { root, heightAt, obstacles: c.obstacles, summitDeck: summit.deck, report: c.report, spots: c.spots, alleyLookout: infill.alleys.lookout };
+  return { root, heightAt, obstacles: c.obstacles, summitDeck: summit.deck, report: c.report, spots: c.spots, home: c.home, lamps: c.lamps, alleyLookout: infill.alleys.lookout };
 }

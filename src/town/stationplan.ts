@@ -67,19 +67,22 @@ export const GATES = {
   z0: 672,
   z1: 688,
   /** Machine centres (x), machine body width. */
-  machineX: [-82.5, -67.5, -52.5, -37.5, -22.5, -7.5, 7.5, 22.5] as readonly number[],
+  machineX: [-22.5, -7.5, 7.5, 22.5] as readonly number[],
   machineW: 6,
   /** Centre lines of the lanes between the machines. */
-  laneX: [-75, -60, -45, -30, -15, 0, 15] as readonly number[],
+  laneX: [-15, 0, 15] as readonly number[],
   /** The wide lane next to the staffed booth. */
   wide: { x0: 25.5, x1: 46 },
   /** Fence panels closing the gate line to the side walls. */
-  fenceWest: { x0: HALL.x0, x1: -85.5 },
+  fenceWest: { x0: HALL.x0, x1: -25.5 },
   fenceEast: { x0: 74, x1: HALL.x1 },
 } as const;
 
 /** The staffed gate booth (有人改札). */
 export const BOOTH = { x0: 46, x1: 74, z0: 672, z1: 690 } as const;
+
+/** Glazed station office beside the smaller gate bank; the public counter faces the hall. */
+export const OFFICE = { x0: -83.5, x1: -41.5, z0: 662, z1: 690 } as const;
 
 /** Ticket vending machines along the east wall of the concourse. */
 export const TICKET_MACHINES = {
@@ -148,6 +151,7 @@ export function stationObstacles(): Rect[] {
     rect(GATES.fenceWest.x0, GATES.fenceWest.x1, zf - 1, zf + 1),
     rect(GATES.fenceEast.x0, GATES.fenceEast.x1, zf - 1, zf + 1),
     rect(BOOTH.x0, BOOTH.x1, BOOTH.z0, BOOTH.z1),
+    rect(OFFICE.x0, OFFICE.x1, OFFICE.z0, OFFICE.z1),
   );
   for (const z of TICKET_MACHINES.zc) out.push(rect(TICKET_MACHINES.x0, TICKET_MACHINES.x1, z - TICKET_MACHINES.w / 2, z + TICKET_MACHINES.w / 2));
   for (const [xa, xb] of VENDING.x) out.push(rect(xa, xb, VENDING.z0, VENDING.z1));

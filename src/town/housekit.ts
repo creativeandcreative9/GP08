@@ -43,6 +43,12 @@ export function drift(c: RGB, rnd: Rng, amt: number): RGB {
 export class HB {
   constructor(readonly b: MeshBatch, readonly f: Frame) {}
 
+  surf(kind: number, fn: () => void): void {
+    const previous = this.b.surface;
+    this.b.surface = kind;
+    try { fn(); } finally { this.b.surface = previous; }
+  }
+
   /** Indexed quad a,b,c,d (in order around the perimeter) with a colour per corner; `hint` = outward direction. */
   quadC(a: V3, b: V3, c: V3, d: V3, ca: RGB, cb: RGB, cc: RGB, cd: RGB, hint: V3): void {
     const B = this.b;
@@ -60,7 +66,7 @@ export class HB {
     B.pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2], d[0], d[1], d[2]);
     B.nor.push(nx, ny, nz, nx, ny, nz, nx, ny, nz, nx, ny, nz);
     B.col.push(ca[0], ca[1], ca[2], 1, cb[0], cb[1], cb[2], 1, cc[0], cc[1], cc[2], 1, cd[0], cd[1], cd[2], 1);
-    B.surf.push(0, 0, 0, 0); // plain surface (keeps the per-vertex tags aligned with the vertices)
+    B.appendSurface(4);
     if (B.withUV) B.uvs.push(0, 0, 0, 0, 0, 0, 0, 0);
     // same winding rule as MeshBatch.tri (the lighting of back-face-culling-free, two-sided materials depends on it)
     if (along) B.idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
@@ -89,7 +95,7 @@ export class HB {
     B.pos.push(a[0], a[1], a[2], b[0], b[1], b[2], c[0], c[1], c[2]);
     B.nor.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
     B.col.push(ca[0], ca[1], ca[2], 1, cb[0], cb[1], cb[2], 1, cc[0], cc[1], cc[2], 1);
-    B.surf.push(0, 0, 0);
+    B.appendSurface(3);
     if (B.withUV) B.uvs.push(0, 0, 0, 0, 0, 0);
     if (along) B.idx.push(base, base + 2, base + 1);
     else B.idx.push(base, base + 1, base + 2);

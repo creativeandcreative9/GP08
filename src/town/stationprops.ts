@@ -1,12 +1,16 @@
 import { beam, type MeshBatch } from './batch';
+import { discFace } from './shapes';
+import { roundedFoliage } from './topiary';
 import type { Ctx } from './ctx';
 import { obox, person, SKIN, type PersonStyle } from './stationfolk';
 import { pane, signX, signZ, type StationKit } from './stationkit';
-import { BOOTH, F, GATES, HALL, TICKET_MACHINES, VENDING } from './stationplan';
+import { BOOTH, F, GATES, HALL, OFFICE, TICKET_MACHINES, VENDING } from './stationplan';
 import { hex, type RGB } from './util';
+import { foliageCluster } from './leaf';
+import { plantCards } from './greenery';
 
-const GATE_BODY = hex(0xeef0f4);
-const GATE_CAP = hex(0xc4ccd9);
+const GATE_BODY = hex(0xcbd0dc);
+const GATE_CAP = hex(0x35455e);
 const GATE_DARK = hex(0x39445f);
 const KICK = hex(0x56607a);
 const STEEL = hex(0xaeb4be);
@@ -24,27 +28,39 @@ const glowY = (b: MeshBatch, x0: number, x1: number, z0: number, z1: number, y: 
 
 /** One automatic ticket gate: body, card reader pad and indicator lamps at both ends. */
 function gate(k: StationKit, x: number): void {
+  const b = k.metal;
   const hw = GATES.machineW / 2;
   const z0 = GATES.z0;
   const z1 = GATES.z1;
-  k.room.box(x - hw, x + hw, F, F + 1.2, z0 + 0.4, z1 - 0.4, KICK);
-  k.room.box(x - hw + 0.2, x + hw - 0.2, F + 1.2, F + 10.2, z0 + 0.6, z1 - 0.6, GATE_BODY);
-  k.room.box(x - hw - 0.2, x + hw + 0.2, F + 10.2, F + 11.2, z0, z1, GATE_CAP, { bottom: true });
-  for (const sx of [-1, 1]) k.room.box(x + sx * (hw - 0.2) - (sx > 0 ? 0 : 0.07), x + sx * (hw - 0.2) + (sx > 0 ? 0.07 : 0), F + 5.2, F + 6.6, z0 + 1.4, z1 - 1.4, hex(0x2f66b3));
+  b.box(x - hw, x + hw, F, F + 1.2, z0 + 0.4, z1 - 0.4, KICK);
+  b.box(x - hw + 0.2, x + hw - 0.2, F + 1.2, F + 9.6, z0 + 0.6, z1 - 0.6, GATE_BODY);
+  // A small bevel catches the ceiling lights rather than leaving a sharp white box.
+  const outer: [number, number][] = [[x - hw + .2, z0 + .6], [x + hw - .2, z0 + .6], [x + hw - .2, z1 - .6], [x - hw + .2, z1 - .6]];
+  const inner: [number, number][] = [[x - hw + .6, z0 + 1], [x + hw - .6, z0 + 1], [x + hw - .6, z1 - 1], [x - hw + .6, z1 - 1]];
+  for (let i = 0; i < 4; i++) {
+    const j = (i + 1) % 4, a = outer[i]!, c = outer[j]!, d = inner[j]!, e = inner[i]!;
+    b.quad([a[0], F + 9.6, a[1]], [c[0], F + 9.6, c[1]], [d[0], F + 10.2, d[1]], [e[0], F + 10.2, e[1]], GATE_BODY, [0, 1, 0]);
+  }
+  b.box(x - hw - 0.2, x + hw + 0.2, F + 10.2, F + 11.2, z0, z1, GATE_CAP, { bottom: true });
+  for (const sx of [-1, 1]) b.box(x + sx * (hw - 0.2) - (sx > 0 ? 0 : 0.07), x + sx * (hw - 0.2) + (sx > 0 ? 0.07 : 0), F + 5.2, F + 6.6, z0 + 1.4, z1 - 1.4, hex(0x2f66b3));
   // IC card reader pad (entry side) and a small one at the exit side
   for (const [a, b2, entry] of [[z0 + 6, z0 + 10.2, true], [z1 - 9, z1 - 6, false]] as [number, number, boolean][]) {
-    k.room.box(x - 2.4, x + 2.4, F + 11.2, F + 11.7, a - 0.5, b2 + 0.5, GATE_DARK);
+    b.box(x - 2.4, x + 2.4, F + 11.2, F + 11.7, a - 0.5, b2 + 0.5, GATE_DARK);
     glowY(k.glow, x - 1.8, x + 1.8, a, b2, F + 11.73, entry ? READER : [0.7, 0.9, 1]);
   }
-  // display housings: entry end (facing the concourse) and exit end
+  // Front status panel, with an illuminated cross indicating the open lane.
+  b.box(x - .75, x + .75, F + 7.8, F + 9.4, z0 + .5, z0 + .59, GATE_DARK);
+  glowZ(k.glow, x - .12, x + .12, F + 8.08, F + 9.12, z0 + .48, -1, GREEN_LAMP);
+  glowZ(k.glow, x - .52, x + .52, F + 8.48, F + 8.72, z0 + .47, -1, GREEN_LAMP);
+  // Low indicator housings at both ends; the card reader stays flat on the cap.
   for (const end of [-1, 1] as const) {
     const za = end < 0 ? z0 + 0.8 : z1 - 4.2;
     const zb = end < 0 ? z0 + 4.2 : z1 - 0.8;
-    k.room.box(x - 2.3, x + 2.3, F + 11.2, F + 14.2, za, zb, GATE_DARK, { bottom: true });
-    glowZ(k.glow, x - 1.7, x + 1.7, F + 11.9, F + 13.7, end < 0 ? za - 0.05 : zb + 0.05, end, end < 0 ? BLUE_LAMP : GREEN_LAMP);
+    b.box(x - 2.3, x + 2.3, F + 11.2, F + 12.1, za, zb, GATE_DARK, { bottom: true });
+    glowZ(k.glow, x - 1.7, x + 1.7, F + 11.45, F + 11.9, end < 0 ? za - 0.05 : zb + 0.05, end, end < 0 ? BLUE_LAMP : GREEN_LAMP);
     const dz = end < 0 ? 1 : -1;
     const base = end < 0 ? za + 0.6 : zb - 0.6;
-    k.glow.tri([x - 1.4, F + 14.25, base], [x + 1.4, F + 14.25, base], [x, F + 14.25, base + dz * 2.3], GREEN_LAMP, [0, 1, 0]);
+    k.glow.tri([x - 1.4, F + 12.15, base], [x + 1.4, F + 12.15, base], [x, F + 12.15, base + dz * 2.3], GREEN_LAMP, [0, 1, 0]);
   }
 }
 
@@ -85,14 +101,56 @@ function booth(k: StationKit): void {
   person(k.room, (x0 + x1) / 2 - 3, F, z0 + 7, Math.PI * 1.2, ATTENDANT, 0.92);
 }
 
-/** Fluorescent troffers in the grid ceiling (aligned with the 7.5 unit panels). */
+/** A quiet ticket-office counter: plaster shell, recessed glazing and a working desk behind it. */
+function officeWindow(k: StationKit): void {
+  const { x0, x1, z0, z1 } = OFFICE, wall = hex(0xb6b0b5), frame = hex(0x625651);
+  const sill = F + 11, glassTop = F + 27, top = F + 37, inset = z0 + 1.3;
+  k.room.box(x0, x1, F, sill, z0, z1, wall);
+  k.room.box(x0, x0 + 1.3, sill, top, z0, z1, wall);
+  k.room.box(x1 - 1.3, x1, sill, top, z0, z1, wall);
+  k.room.box(x0, x1, sill, top, z1 - 1.3, z1, wall);
+  k.room.box(x0, x1, glassTop, top, z0, z0 + 1.3, wall);
+  k.room.box(x0, x1, top - 1, top, z0, z1, hex(0xa6a1a8));
+  // The counter remains inside the office collision footprint.
+  k.room.box(x0, x1, sill, sill + 1.1, z0, z0 + 4, hex(0x756452));
+  for (const x of [x0 + 1.3, (x0 + x1) / 2, x1 - 2.1]) k.room.box(x, x + .8, sill + 1.1, glassTop, inset - .3, inset + .5, frame);
+  for (const y of [sill + 1.1, glassTop - .8]) k.room.box(x0 + 1.3, x1 - 1.3, y, y + .8, inset - .3, inset + .5, frame);
+  pane(k.glass, [x0 + 2.1, sill + 1.9, inset], [x1 - 2.1, sill + 1.9, inset], [x1 - 2.1, glassTop - .8, inset], [x0 + 2.1, glassTop - .8, inset], [0, 0, -1]);
+  // Desk, monitor, ticket printer and papers are visible through the window.
+  const center = (x0 + x1) / 2;
+  k.room.box(x0 + 4, x1 - 4, F + 10.8, F + 12, z0 + 9, z0 + 18, hex(0xa1917a));
+  k.room.box(center - 2, center + 2, F + 12, F + 13.4, z0 + 12, z0 + 15, GATE_DARK);
+  k.room.box(center - 5, center + 3, F + 13.4, F + 19, z0 + 13.4, z0 + 14.2, GATE_DARK);
+  glowZ(k.glow, center - 4.5, center + 2.5, F + 14, F + 18.5, z0 + 13.35, -1, [.48, .65, .72]);
+  k.room.box(x1 - 13, x1 - 5, F + 12, F + 16.2, z0 + 11, z0 + 17, hex(0xd7d4cc));
+  k.room.box(x0 + 8, x0 + 15, F + 12, F + 12.15, z0 + 10, z0 + 15, hex(0xf4f0df));
+  // An original uniformed clerk works behind the desk, inside the closed office.
+  person(k.room, center + 14, F, z0 + 8, Math.PI, {
+    jacket: hex(0x35465c), trousers: hex(0x273446), skin: SKIN,
+    hair: hex(0x322923), cap: hex(0x273950), armsForward: true,
+  }, .92);
+  // A small counter plant sits inside the existing office footprint.
+  const plantX = x1 - 4.5, plantZ = z0 + 3;
+  k.room.cylinder(plantX, plantZ, F + 12.1, F + 14.2, 1.4, 1.8, 8, hex(0xd8c8a7));
+  k.room.cylinder(plantX, plantZ, F + 14.2, F + 18, .16, .12, 5, hex(0x68543e));
+  roundedFoliage(k.room, plantX, F + 18.1, plantZ, 2.4, 2, 2.2, hex(0x62934e));
+  roundedFoliage(k.room, plantX + .8, F + 19.8, plantZ, 1.4, 1.4, 1.4, hex(0x78a55c));
+  signZ(k.signs, k.tex.uv('officeWindowSign'), center + 2, F + 29.5, 24, 6, z0 - .05, -1);
+  const clock = k.tex.uv('clock');
+  discFace(k.signs, [x0 + 7, F + 32.5, z0 - .08], [0, 0, -1], [0, 1, 0], 2.94, 32, [1, 1, 1], {
+    cu: (clock.u0 + clock.u1) / 2, cv: (clock.v0 + clock.v1) / 2,
+    ru: (clock.u1 - clock.u0) * .49, rv: (clock.v1 - clock.v0) * .49,
+  });
+}
+
+/** Long fluorescent fixtures in the suspended grid ceiling. */
 function ceilingLights(k: StationKit): void {
   const y = HALL.ceil - 0.08;
-  for (const za of [630, 645, 675, 697.5]) {
-    for (let i = 0; i < 9; i++) {
-      const xa = -97.5 + i * 22.5;
-      k.room.box(xa, xa + 15, y - 0.7, y, za, za + 7.5, hex(0xdadde2));
-      glowY(k.glow, xa + 0.9, xa + 14.1, za + 0.9, za + 6.6, y - 0.72, [1, 0.98, 0.9], false);
+  for (const za of [634, 668, 699]) {
+    for (let i = 0; i < 6; i++) {
+      const xa = -94 + i * 33;
+      k.room.box(xa, xa + 23, y - .65, y, za, za + 2.3, hex(0xc4c6ce));
+      glowY(k.glow, xa + .6, xa + 22.4, za + .5, za + 1.8, y - .67, [1, .98, .92], false);
     }
   }
 }
@@ -210,16 +268,17 @@ function bins(k: StationKit, x0: number, z: number): void {
   for (const x of [x0 - 2, x0 + 23.6]) k.room.box(x - 0.3, x + 0.3, F + 11.8, F + 26.5, z + 3, z + 3.6, STEEL);
 }
 
-function plant(k: StationKit, x: number, z: number, s = 1): void {
+function plant(c: Ctx, k: StationKit, x: number, z: number, s = 1): void {
   k.room.cylinder(x, z, F, F + 6 * s, 3.4 * s, 2.8 * s, 8, hex(0xb5654a));
   k.room.cylinder(x, z, F + 6 * s, F + 6.3 * s, 3 * s, 3 * s, 8, hex(0x4a3524));
+  if (c.foliage) { plantCards(c, x, F + 6 * s, z, 14 * s, 'plantRubber'); return; }
   const g = [hex(0x4fa352), hex(0x62b85a), hex(0x3f8f48)];
   g.forEach((c, i) => k.room.blob(x + (i - 1) * 1.4 * s, F + (10 + i * 2.2) * s, z + (i % 2 ? 1 : -1) * s, 3.4 * s, 3.8 * s, 3.2 * s, c, 0.1, i));
 }
 
 
 /** A tall vase with cherry blossom branches on a pedestal (a spring decoration). */
-function sakuraVase(k: StationKit, x: number, z: number): void {
+function sakuraVase(c: Ctx, k: StationKit, x: number, z: number): void {
   const pink = [hex(0xffc4d8), hex(0xffb3cc), hex(0xffd6e4), hex(0xff9fbf)];
   const wood = hex(0x6a4b3b);
   k.room.box(x - 3.4, x + 3.4, F, F + 9, z - 3.4, z + 3.4, hex(0xf2efe8));
@@ -230,8 +289,13 @@ function sakuraVase(k: StationKit, x: number, z: number): void {
   ];
   tips.forEach(([dx, y, dz, r], i) => {
     beam(k.room, [x, F + 17, z], [x + dx, F + y - 2, z + dz], 0.7, 0.7, wood);
-    k.room.blob(x + dx, F + y, z + dz, r, r * 0.85, r, pink[i % 4]!, 0.08, i);
-    k.room.blob(x + dx * 0.55 + 0.8, F + y - 4, z + dz * 0.55, r * 0.6, r * 0.5, r * 0.6, pink[(i + 1) % 4]!, 0.08, i + 7);
+    if (c.foliage) {
+      foliageCluster(c.foliage.at(x, z), x + dx, F + y, z + dz, r, .85, i % 2 ? 'bloomB' : 'bloomA', i * 1.3);
+      foliageCluster(c.foliage.at(x, z), x + dx * .55, F + y - 4, z + dz * .55, r * .6, .8, 'bloomB', i);
+    } else {
+      k.room.blob(x + dx, F + y, z + dz, r, r * 0.85, r, pink[i % 4]!, 0.08, i);
+      k.room.blob(x + dx * 0.55 + 0.8, F + y - 4, z + dz * 0.55, r * 0.6, r * 0.5, r * 0.6, pink[(i + 1) % 4]!, 0.08, i + 7);
+    }
   });
 }
 
@@ -264,7 +328,7 @@ function tactile(k: StationKit): void {
   lineX(660.5, 3.75, 32.5);
   tile(36.25, 660.5, 'dots');
   // warning band along the gates
-  for (let x = -87; x <= 47; x += t) tile(x, GATES.z0 - 3.2, 'dots');
+  for (let x = GATES.machineX[0]! - 4.5; x <= 47; x += t) tile(x, GATES.z0 - 3.2, 'dots');
   // guide through the wide lane
   lineZ(36.25, GATES.z0 + 1, GATES.z1 - 1);
   // guide line to the ticket machines
@@ -284,17 +348,19 @@ const PEOPLE: { x: number; z: number; y?: number; yaw: number; st: PersonStyle; 
   { x: -8, z: 700, yaw: Math.PI, st: { jacket: hex(0xd9d4c4), trousers: hex(0x4a4f5a), skin: SKIN, hair: hex(0x3a2e28) } },
 ];
 
-export function furnishConcourse(_c: Ctx, k: StationKit): void {
+export function furnishConcourse(c: Ctx, k: StationKit): void {
   for (const x of GATES.machineX) gate(k, x);
   const zf = (GATES.z0 + GATES.z1) / 2;
-  fence(k, GATES.fenceWest.x0, GATES.fenceWest.x1, zf);
+  fence(k, GATES.fenceWest.x0, OFFICE.x0, zf);
+  fence(k, OFFICE.x1, GATES.fenceWest.x1, zf);
   fence(k, GATES.fenceEast.x0, GATES.fenceEast.x1, zf);
   booth(k);
+  officeWindow(k);
   ceilingLights(k);
   tactile(k);
   // hanging signs above the gate line: 改札口 with the platforms, and the departure board
-  hangingBoard(k, 'hanging', -50, 666, 68, 68 / (1536 / 224), F + 35.5);
-  angledBoard(k, 'departure', 19, 664, 44, 11, F + 35.5, 0.25);
+  hangingBoard(k, 'hanging', -5, 666, 60, 60 / (1536 / 224), F + 35.5);
+  angledBoard(k, 'departure', 54, 664, 40, 10, F + 35.5, 0.25);
   ticketMachines(k);
   vending(k);
   sideBoard(k, 'ticketSign', 62, 652, 24, 6, F + 34);
@@ -303,9 +369,9 @@ export function furnishConcourse(_c: Ctx, k: StationKit): void {
   bench(k, -88, HALL.z0 + 3.6, 24);
   bench(k, 38, HALL.z0 + 3.6, 24);
   bins(k, -56, HALL.z0 + 4);
-  sakuraVase(k, -24, HALL.z0 + 4.5);
-  plant(k, 18, HALL.z0 + 5, 0.9);
-  plant(k, 98, 701, 1.0);
+  sakuraVase(c, k, -24, HALL.z0 + 4.5);
+  plant(c, k, 18, HALL.z0 + 5, 0.9);
+  plant(c, k, 98, 701, 1.0);
 
   // west wall: timetable, notice board, benches, poster
   const wx = HALL.x0 + 0.1;

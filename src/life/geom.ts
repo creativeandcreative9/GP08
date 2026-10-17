@@ -121,6 +121,7 @@ export function octRing(s: Oct): V3[] {
 }
 
 export interface OctColors {
+  smooth?: boolean;
   front?: RGB;
   back?: RGB;
   left?: RGB;
@@ -131,6 +132,7 @@ export interface OctColors {
 
 /** Octagonal frustum between two sections. */
 export function octBand(b: MeshBatch, s0: Oct, s1: Oct, color: RGB, o: OctColors = {}): void {
+  const first = b.vertexCount;
   const r0 = octRing(s0);
   const r1 = octRing(s1);
   const c: V3 = [((s0.cx ?? 0) + (s1.cx ?? 0)) / 2, (s0.y + s1.y) / 2, ((s0.cz ?? 0) + (s1.cz ?? 0)) / 2];
@@ -148,11 +150,33 @@ export function octBand(b: MeshBatch, s0: Oct, s1: Oct, color: RGB, o: OctColors
     },
     c,
   );
+  if (o.smooth && Math.abs(s1.y - s0.y) > 1e-6) {
+    const dy = s1.y - s0.y;
+    for (let i = first * 3; i < b.pos.length; i += 3) {
+      const t = Math.max(0, Math.min(1, (b.pos[i + 1]! - s0.y) / dy));
+      const a = s0.a + (s1.a - s0.a) * t, c = s0.c + (s1.c - s0.c) * t;
+      const x = b.pos[i]! - ((s0.cx ?? 0) + ((s1.cx ?? 0) - (s0.cx ?? 0)) * t);
+      const z = b.pos[i + 2]! - ((s0.cz ?? 0) + ((s1.cz ?? 0) - (s0.cz ?? 0)) * t);
+      let nx = x / (a * a), nz = z / (c * c);
+      let ny = -(nx * ((s1.cx ?? 0) - (s0.cx ?? 0)) + nz * ((s1.cz ?? 0) - (s0.cz ?? 0))
+        + x * x / (a * a * a) * (s1.a - s0.a) + z * z / (c * c * c) * (s1.c - s0.c)) / dy;
+      const length = Math.hypot(nx, ny, nz); nx /= length; ny /= length; nz /= length;
+      nx = nx * .75 + b.nor[i]! * .25; ny = ny * .75 + b.nor[i + 1]! * .25; nz = nz * .75 + b.nor[i + 2]! * .25;
+      const mixed = Math.hypot(nx, ny, nz); b.nor[i] = nx / mixed; b.nor[i + 1] = ny / mixed; b.nor[i + 2] = nz / mixed;
+    }
+  }
   if (o.top) fan(b, r1, o.top, [0, 1, 0]);
   if (o.bottom) fan(b, r0, o.bottom, [0, -1, 0]);
 }
 
+/** Rounded clothing catches continuous light without adding geometry or smoothing its closed caps. */
+export function roundedOctBand(b: MeshBatch, s0: Oct, s1: Oct, color: RGB, o: OctColors = {}): void {
+  octBand(b, s0, s1, color, { ...o, smooth: true });
+}
+
 export interface EllipsoidOpts {
+  /** Analytic surface normals for skin and hair, with no additional triangles. */
+  smooth?: boolean;
   seg?: number;
   rings?: number;
   /** Rings to draw: from `ringFrom` (0 = top pole) to `ringTo` (rings = bottom pole). */
@@ -177,6 +201,7 @@ const hash = (a: number, b: number, s: number): number => {
 
 /** Faceted ellipsoid (or a cap / half shell of one). Segment 0 faces +z, increasing towards +x. */
 export function ellipsoid(b: MeshBatch, cx: number, cy: number, cz: number, rx: number, ry: number, rz: number, color: RGB, o: EllipsoidOpts = {}): void {
+  const first = b.vertexCount;
   const seg = o.seg ?? 8;
   const rings = o.rings ?? 4;
   const r0 = o.ringFrom ?? 0;
@@ -210,6 +235,11 @@ export function ellipsoid(b: MeshBatch, cx: number, cy: number, cz: number, rx: 
       else if (j === rings - 1) faceTri(b, a, bb, d, col, c);
       else faceQuad(b, a, bb, cc, d, col, c);
     }
+  }
+  if (o.smooth) for (let i = first; i < b.vertexCount; i++) {
+    const nx = (b.pos[i * 3]! - cx) / (rx * rx), ny = (b.pos[i * 3 + 1]! - cy) / (ry * ry), nz = (b.pos[i * 3 + 2]! - cz) / (rz * rz);
+    const length = Math.hypot(nx, ny, nz) || 1;
+    b.nor[i * 3] = nx / length; b.nor[i * 3 + 1] = ny / length; b.nor[i * 3 + 2] = nz / length;
   }
 }
 
@@ -299,5 +329,6 @@ export function mergeInto(dst: MeshBatch, src: MeshBatch, dx: number, dy: number
   for (let i = 0; i < src.pos.length; i += 3) dst.pos.push(src.pos[i]! + dx, src.pos[i + 1]! + dy, src.pos[i + 2]! + dz);
   for (const n of src.nor) dst.nor.push(n);
   for (const c of src.col) dst.col.push(c);
+  for (const tag of src.surf) dst.surf.push(tag);
   for (const i of src.idx) dst.idx.push(base + i);
 }

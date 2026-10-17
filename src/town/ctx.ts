@@ -1,5 +1,7 @@
-import type { Scene } from '@babylonjs/core';
+import { type Scene } from '@babylonjs/core/scene.js';
 import { ChunkedBatch, MeshBatch } from './batch';
+import type { BlossomClouds } from './blossoms';
+import type { ClothBanners } from './cloth';
 import type { SignAtlas } from './signs';
 import type { Rect } from './util';
 
@@ -20,6 +22,11 @@ export interface Ctx {
   main: ChunkedBatch;
   /** Mountain forest trees (chunked). */
   forest: ChunkedBatch;
+  foliage?: ChunkedBatch;
+  blossoms?: BlossomClouds;
+  cloth?: ClothBanners;
+  /** Clipped, opaque shrubs use their own shadow offset while sharing the town material. */
+  topiary?: ChunkedBatch;
   /** Signboards sharing the atlas texture (also shop interiors, posters and other picture details). */
   signs: ChunkedBatch;
   /** Window panes: transparent, with texture coordinates for the reflection streaks. */
@@ -33,6 +40,8 @@ export interface Ctx {
   obstacles: Rect[];
   /** Built named lots by id (shops), used for camera presets. */
   spots: Record<string, Spot>;
+  home?: { x: number; z: number };
+  lamps?: { x: number; y: number; z: number }[];
   report: string[];
   rnd: () => number;
 }

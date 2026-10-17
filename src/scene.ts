@@ -1,19 +1,18 @@
-import {
-  ArcRotateCamera,
-  Color3,
-  Color4,
-  DirectionalLight,
-  type Engine,
-  HemisphericLight,
-  Scene,
-  Vector3,
-} from '@babylonjs/core';
+import { ArcRotateCamera } from '@babylonjs/core/Cameras/arcRotateCamera.js';
+import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
+import { PointLight } from '@babylonjs/core/Lights/pointLight.js';
+import { DirectionalLight } from '@babylonjs/core/Lights/directionalLight.js';
+import { type Engine } from '@babylonjs/core/Engines/engine.js';
+import { HemisphericLight } from '@babylonjs/core/Lights/hemisphericLight.js';
+import { Scene } from '@babylonjs/core/scene.js';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import { createFallingPetals } from './petals';
 import { LIGHT, setupRendering, type Rendering } from './render';
 import { createSky, HORIZON } from './sky';
 import { applySurfaceDetail } from './surface';
+import { addDistanceDetail, lightShafts } from './town/atmosphere';
 import { SPAWN } from './town/layout';
-import { createLife } from './life';
+import { createLife, type TownLife } from './life';
 import { buildTown, type Town } from './town/build';
 import { EYE, evalPoses } from './town/evalcams';
 
@@ -22,6 +21,7 @@ export interface GameScene {
   camera: ArcRotateCamera;
   town: Town;
   rendering: Rendering;
+  life?: TownLife;
 }
 
 const VIEWS = ['overview', 'street', 'summit', 'platform', 'alley', 'ref1', 'ref2', 'ref3', 'ref4', 'ref5'] as const;
@@ -108,7 +108,7 @@ export function createScene(engine: Engine, canvas: HTMLCanvasElement): GameScen
   scene.clearColor = new Color4(HORIZON.r, HORIZON.g, HORIZON.b, 1);
   scene.fogMode = Scene.FOGMODE_EXP2;
   scene.fogColor = new Color3(HORIZON.r, HORIZON.g, HORIZON.b);
-  scene.fogDensity = 0.0001;
+  scene.fogDensity = 0.00018;
 
   const camera = new ArcRotateCamera('camera', -Math.PI / 2, Math.PI / 3, 40, new Vector3(0, 2, 0), scene);
   camera.minZ = 1;
@@ -138,16 +138,30 @@ export function createScene(engine: Engine, canvas: HTMLCanvasElement): GameScen
 
   // town geometry casts and receives sun shadows; signs, decals and the terrain only receive them
   const townMeshes = town.root.getChildMeshes(true);
-  const casters = townMeshes.filter((m) => m.name.startsWith('town_') || m.name.startsWith('forest_'));
+  const casters = townMeshes.filter((m) => m.name.startsWith('town_') || m.name.startsWith('forest_') || (m.name.startsWith('foliage_') && !m.metadata?.blossomVisible) || m.name.startsWith('topiary_') || m.name === 'stationroom' || m.name === 'stationmetal');
   const receivers = [...townMeshes.filter((m) => m.name !== 'clouds' && m.name !== 'sea'), ...scene.meshes.filter((m) => m.name === 'terrain')];
+  // Daylight through windows and the station lamps are gentler than the unoccluded outdoor sky.
+  const hallInterior = townMeshes.filter(m => /^station(room|metal|floor|wall|tile|ceil|tactile|signs)$/.test(m.name));
+  hemi.excludedMeshes.push(...hallInterior);
+  const hallSky = new HemisphericLight('station-sky', new Vector3(0, 1, 0), scene);
+  hallSky.diffuse.set(.98, .96, .92); hallSky.groundColor.set(.70, .67, .65); hallSky.specular.set(0, 0, 0);
+  hallSky.intensity = .75; hallSky.includedOnlyMeshes = hallInterior;
+  const hallLightMeshes = townMeshes.filter(m => /^station(room|metal|floor|wall|tile|ceil|tactile)$/.test(m.name));
+  for (const x of [-56, 56]) {
+    const hallLight = new PointLight(x < 0 ? 'station-light' : 'station-light-east', new Vector3(x, 31, 664), scene);
+    hallLight.diffuse.set(1, .97, .91); hallLight.intensity = .4; hallLight.range = 160;
+    hallLight.includedOnlyMeshes = [...hallLightMeshes];
+  }
   const rendering = setupRendering(scene, camera, sun, casters, receivers);
   applySurfaceDetail(scene);
+  lightShafts(scene, town);
 
   scene.metadata = { ...(scene.metadata ?? {}), town };
-  createLife(scene, town, rendering);
+  const life = createLife(scene, town, rendering);
+  addDistanceDetail(scene, town.root);
   const q = new URLSearchParams(location.search).get('view');
   const view: View = (VIEWS as readonly string[]).includes(q ?? '') ? (q as View) : 'default';
   applyView(camera, scene, town, view);
 
-  return { scene, camera, town, rendering };
+  return { scene, camera, town, rendering, life };
 }

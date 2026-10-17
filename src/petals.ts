@@ -1,4 +1,11 @@
-import { Color4, DynamicTexture, ParticleSystem, Texture, Vector3, type Matrix, type Particle, type Scene } from '@babylonjs/core';
+import { HALL } from './town/stationplan';
+import { Color4 } from '@babylonjs/core/Maths/math.color.js';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
+import { ParticleSystem } from '@babylonjs/core/Particles/particleSystem.js';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture.js';
+import { Vector3, type Matrix } from '@babylonjs/core/Maths/math.vector.js';
+import { type Particle } from '@babylonjs/core/Particles/particle.js';
+import { type Scene } from '@babylonjs/core/scene.js';
 
 /** Most petals alive at once. */
 const CAPACITY = 900;
@@ -84,8 +91,9 @@ export function createFallingPetals(scene: Scene): void {
   ps.emitRate = 0;
   ps.minLifeTime = 10;
   ps.maxLifeTime = 20; // overwritten per petal in startPositionFunction
-  ps.minSize = 0.9;
-  ps.maxSize = 2.0;
+  // A petal is a few centimetres; the old 7–16cm sprites looked like confetti close to the lens.
+  ps.minSize = 0.25;
+  ps.maxSize = 0.65;
   ps.minInitialRotation = 0;
   ps.maxInitialRotation = TAU;
   ps.minAngularSpeed = -3;
@@ -157,7 +165,8 @@ export function createFallingPetals(scene: Scene): void {
       p.color.a =
         smooth(0, 1.5, age) * (1 - smooth(p.lifeTime - 2.5, p.lifeTime, age)) * smooth(14, 40, d) * (1 - smooth(RADIUS * 0.72, RADIUS, d));
       // landed, or left far behind the viewer: let the standard update recycle it
-      if (d > RADIUS * 1.6 || p.position.y < heightAt(p.position.x, p.position.z) + 0.4) p.age = p.lifeTime;
+      const inHall = p.position.x > HALL.x0 && p.position.x < HALL.x1 && p.position.z > HALL.z0 && p.position.z < HALL.z1 && p.position.y < HALL.ceil;
+      if (inHall || d > RADIUS * 1.6 || p.position.y < heightAt(p.position.x, p.position.z) + 0.4) p.age = p.lifeTime;
     }
     baseUpdate(particles);
   };
@@ -189,8 +198,11 @@ export function createFallingPetals(scene: Scene): void {
 
     // none when the camera is high above the ground
     const alt = camPos.y - heightAt(camPos.x, camPos.z);
-    strength = 1 - smooth(ALT_ON, ALT_OFF, alt);
-    ps.emitRate = RATE * strength;
+    const insideStation = camPos.x > HALL.x0 && camPos.x < HALL.x1 && camPos.z > HALL.z0 && camPos.z < HALL.z1 && camPos.y < HALL.ceil;
+    strength = insideStation ? 0 : 1 - smooth(ALT_ON, ALT_OFF, alt);
+    const climate = scene.metadata?.climate as { day: number; weather: string; indoor: boolean } | undefined;
+    const season = climate ? .55 + .45 * Math.sin((climate.day % 12) / 12 * Math.PI) : 1;
+    ps.emitRate = RATE * strength * season * (climate?.indoor ? 0 : climate?.weather === 'rain' ? .3 : 1);
 
     if (seedPending && ps.manualEmitCount === 0) {
       // the first batch has been created: back to the steady emission

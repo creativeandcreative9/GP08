@@ -1,3 +1,7 @@
+import { cellUv } from './leafcells';
+import { plantCards } from './greenery';
+import { foliageCluster } from './leaf';
+import { SURF } from '../surface';
 import type { MeshBatch } from './batch';
 import type { Ctx } from './ctx';
 import { DEC3_Y } from './ctx';
@@ -60,7 +64,7 @@ function treeRng(x: number, z: number): () => number {
  * Smooth-shaded vertices are appended to the batch with shared indices (a vertex costs far less than the
  * three-vertices-per-triangle of the flat-shaded helpers). Returns the index of the first new vertex.
  */
-function addVerts(b: MeshBatch, pos: readonly V3[], nor: readonly V3[], col: readonly RGB[]): number {
+function addVerts(b: MeshBatch, pos: readonly V3[], nor: readonly V3[], col: readonly RGB[], surface: number = SURF.plain): number {
   const base = b.vertexCount;
   for (let i = 0; i < pos.length; i++) {
     const p = pos[i]!;
@@ -69,9 +73,12 @@ function addVerts(b: MeshBatch, pos: readonly V3[], nor: readonly V3[], col: rea
     b.pos.push(p[0], p[1], p[2]);
     b.nor.push(n[0], n[1], n[2]);
     b.col.push(c[0], c[1], c[2], 1);
-    b.surf.push(0); // keeps the per-vertex surface tags aligned with the vertices
     if (b.withUV) b.uvs.push(0, 0);
   }
+  const oldSurface = b.surface, oldAxis = b.axis;
+  b.surface = surface; b.axis = surface === SURF.bark ? 2 : 0;
+  b.appendSurface(pos.length);
+  b.surface = oldSurface; b.axis = oldAxis;
   return base;
 }
 
@@ -139,7 +146,7 @@ function limb(b: MeshBatch, pts: readonly V3[], radii: readonly number[], sides:
       col.push(tint(base, 0.9 + r() * 0.2));
     }
   }
-  const first = addVerts(b, pos, nor, col);
+  const first = addVerts(b, pos, nor, col, SURF.bark);
   for (let i = 0; i + 1 < n; i++) {
     const ref = mixP(pts[i]!, pts[i + 1]!, 0.5);
     for (let j = 0; j < sides; j++) {
@@ -469,7 +476,10 @@ export function addCherry(c: Ctx, x: number, z: number, scale = 1): void {
   const put = (p: V3, radius: number, flat: number, sun: number, level?: 0 | 1): void => {
     const cy = Math.max(p[1], y0 + bloomLow + radius * flat * 0.9);
     const high = clamp((cy - y0 - 40 * s) / (top - y0 - 40 * s), 0, 1);
-    lump(b, p[0], cy, p[2], radius, flat, level ?? 0, tones, clamp(sun * 0.65 + high * 0.45, 0, 1), r);
+    if (c.foliage) {
+      const light = clamp(sun * .65 + high * .45, 0, 1);
+      foliageCluster(c.foliage.at(x, z), p[0], Math.max(cy, y0 + 31 + radius * flat * 1.18), p[2], radius, flat, light > .68 ? 'bloomA' : light > .35 ? 'bloomB' : 'bloomC', r() * Math.PI, c.blossoms);
+    } else lump(b, p[0], cy, p[2], radius, flat, level ?? 0, tones, clamp(sun * 0.65 + high * 0.45, 0, 1), r);
   };
   /** Small bunches of blossom along a branch, sitting on top of it so that the wood stays visible below. */
   const bunches = (from: V3, to: V3, ts: readonly number[], r0: number, r1: number, outerLevel: 0 | 1 = 0): void => {
@@ -567,7 +577,18 @@ export function addCherry(c: Ctx, x: number, z: number, scale = 1): void {
   // a darker bunch inside the crown, below the top, for depth
   if (big) put([fork[0], fork[1] + 20 * s, fork[2]], 10 * s, 0.8, 0.1 + r() * 0.2, 0);
 
-  petalCarpet(c.dec3, x, z, s, big, r);
+  if (c.foliage) {
+    const uv = cellUv('petalsA'), fb = c.foliage.at(x, z);
+    const pr = treeRng(x + 19, z - 31);
+    for (let i = 0; i < (big ? 14 : 5); i++) {
+      const a = pr() * Math.PI * 2, distance = pr() * (big ? 60 : 33) * s;
+      const px = x + Math.cos(a) * distance, pz = z + Math.sin(a) * distance, half = (9 + pr() * 12) * s;
+      const points: [V3, V3, V3, V3] = [[px - half, 0, pz - half], [px + half, 0, pz - half], [px + half, 0, pz + half], [px - half, 0, pz + half]];
+      if (points.some(p => roadClearance(p[0], p[2]).d < -6)) continue;
+      const ground = points.map(p => [p[0], heightAt(p[0], p[2]) + PETAL_Y + i * .003, p[2]] as V3) as [V3, V3, V3, V3];
+      fb.card(ground, [1, 1, 1], [0, 1, 0], [[uv.u0, uv.vb], [uv.u1, uv.vb], [uv.u1, uv.vt], [uv.u0, uv.vt]]);
+    }
+  } else petalCarpet(c.dec3, x, z, s, big, r);
 }
 
 /**
@@ -596,9 +617,11 @@ export function addRoundTree(c: Ctx, x: number, z: number, scale = 1): void {
     const tip = addv(fork, scl(dirOf(az, rad(48 + r() * 18)), (15 + r() * 5) * s));
     limb(b, [[fork[0], fork[1] - 1 * s, fork[2]], tip], [1.7 * s, 0.7 * s], 5, [bark], r);
     const rr = (11 + r() * 4) * s;
-    lump(b, tip[0], Math.max(tip[1] + 3 * s, y0 + 30 * s), tip[2], rr, 0.85, 0, tones, 0.3 + r() * 0.5, r);
+    if (c.foliage) foliageCluster(c.foliage.at(x, z), tip[0], Math.max(tip[1] + 3 * s, y0 + 30 * s), tip[2], rr, .85, 'zelkova', r() * Math.PI);
+    else lump(b, tip[0], Math.max(tip[1] + 3 * s, y0 + 30 * s), tip[2], rr, 0.85, 0, tones, 0.3 + r() * 0.5, r);
   }
-  lump(b, fork[0], fork[1] + (15 + r() * 4) * s, fork[2], (16 + r() * 4) * s, 0.85, 1, tones, 0.55 + r() * 0.4, r);
+  if (c.foliage) foliageCluster(c.foliage.at(x, z), fork[0], fork[1] + 16 * s, fork[2], 18 * s, .85, 'camphor', r() * Math.PI);
+  else lump(b, fork[0], fork[1] + (15 + r() * 4) * s, fork[2], (16 + r() * 4) * s, 0.85, 1, tones, 0.55 + r() * 0.4, r);
 }
 
 /** Cheap mountain trees go to the forest batch. */
@@ -608,16 +631,21 @@ export function addForestTree(c: Ctx, x: number, z: number, scale: number, kind:
   if (kind === 0) {
     const col: RGB = [0.16 + c.rnd() * 0.08, 0.38 + c.rnd() * 0.1, 0.2 + c.rnd() * 0.06];
     b.cylinder(x, z, y0, y0 + 30 * scale, 3 * scale, 2.5 * scale, 4, TRUNK, false);
-    b.cylinder(x, z, y0 + 22 * scale, y0 + 78 * scale, 26 * scale, 0, 6, col, false);
-    b.cylinder(x, z, y0 + 54 * scale, y0 + 118 * scale, 20 * scale, 0, 6, [col[0] * 1.08, col[1] * 1.08, col[2] * 1.08], false);
+    if (c.foliage) plantCards(c, x, y0 + 14 * scale, z, 105 * scale, 'cedar', (x + z) % Math.PI);
+    else {
+      b.cylinder(x, z, y0 + 22 * scale, y0 + 78 * scale, 26 * scale, 0, 6, col, false);
+      b.cylinder(x, z, y0 + 54 * scale, y0 + 118 * scale, 20 * scale, 0, 6, [col[0] * 1.08, col[1] * 1.08, col[2] * 1.08], false);
+    }
   } else if (kind === 1) {
     const col: RGB = [0.3 + c.rnd() * 0.1, 0.55 + c.rnd() * 0.12, 0.26 + c.rnd() * 0.06];
     b.cylinder(x, z, y0, y0 + 40 * scale, 3.5 * scale, 2.8 * scale, 4, TRUNK, false);
-    b.blob(x, y0 + 68 * scale, z, 34 * scale, 32 * scale, 34 * scale, col, 0.07, x * 0.01 + z);
+    if (c.foliage) foliageCluster(c.foliage.at(x, z), x, y0 + 68 * scale, z, 34 * scale, .94, 'camphor', (x + z) % Math.PI);
+    else b.blob(x, y0 + 68 * scale, z, 34 * scale, 32 * scale, 34 * scale, col, 0.07, x * 0.01 + z);
   } else {
     // wild cherry on the hillside
     const col = BLOSSOM_MID[Math.floor(c.rnd() * 2)]!;
     b.cylinder(x, z, y0, y0 + 38 * scale, 3.5 * scale, 2.8 * scale, 4, TRUNK, false);
-    b.blob(x, y0 + 66 * scale, z, 34 * scale, 28 * scale, 34 * scale, col, 0.07, x * 0.01 + z);
+    if (c.foliage) foliageCluster(c.foliage.at(x, z), x, y0 + 66 * scale, z, 34 * scale, .82, 'bloomE', (x + z) % Math.PI, c.blossoms);
+    else b.blob(x, y0 + 66 * scale, z, 34 * scale, 28 * scale, 34 * scale, col, 0.07, x * 0.01 + z);
   }
 }

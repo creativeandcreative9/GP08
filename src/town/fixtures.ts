@@ -1,3 +1,5 @@
+import { plantCards } from './greenery';
+import { SURF } from '../surface';
 import type { MeshBatch } from './batch';
 import type { Ctx } from './ctx';
 import { Fx, annulus, cross, discFace, panel, puff, signQuad, sprite, tileUv, tube } from './shapes';
@@ -61,12 +63,14 @@ export const VEND_D = 7;
 /** A lit vending machine (自動販売機): 24 vertices, the front is a picture from the sign atlas. */
 export function vendingMachine(c: Ctx, fr: Fx, variant: number): void {
   const b = c.main.at(fr.x, fr.z);
+  const previousSurface = b.surface; b.surface = SURF.paintedMetal;
   const sb = c.signs.at(fr.x, fr.z);
   const v = variant % 8;
   const body = VEND_BODY[v]!;
   fr.box(b, -VEND_W / 2, VEND_W / 2, 0.4, 22.5, -VEND_D / 2, VEND_D / 2 - 0.05, body, { front: false, back: false });
   const uv = tileUv(c.atlas.uv(v < 4 ? SIGN.vendA : SIGN.vendB), v % 4, 4, 0.0004, 0.0003);
   signQuad(sb, fr.p(0, 11.45, VEND_D / 2), fr.d(0, 0, 1), UPV, VEND_W, 22.1, uv);
+  b.surface = previousSurface;
 }
 
 const BIN_COLS = [0x2f6fb5, 0xe0702a, 0x3f9a4e, 0x9a9ea6].map(hex);
@@ -74,10 +78,12 @@ const BIN_COLS = [0x2f6fb5, 0xe0702a, 0x3f9a4e, 0x9a9ea6].map(hex);
 /** A sorted-waste bin (分別ごみ箱): a coloured box with an opening and a label, 36 vertices. */
 export function wasteBin(c: Ctx, fr: Fx, kind: number): void {
   const b = c.main.at(fr.x, fr.z);
+  const previousSurface = b.surface; b.surface = SURF.paintedMetal;
   const col = BIN_COLS[kind % BIN_COLS.length]!;
   fr.box(b, -2.7, 2.7, 0, 9.5, -2.7, 2.7, col, { back: false, top: hex(0x56595f) });
   fr.facade(b, -1.8, 1.8, 6.2, 8.2, 2.74, 1, hex(0x1d1f23));
   fr.facade(b, -1.8, 1.8, 2.2, 4.4, 2.74, 1, WHITE);
+  b.surface = previousSurface;
 }
 
 // ---- bicycles ------------------------------------------------------------------------------------------------------
@@ -101,12 +107,19 @@ function rod(b: MeshBatch, fr: Fx, a: readonly [number, number], d: readonly [nu
 
 /**
  * A parked bicycle (ママチャリ), its axis along the frame's local `v`: wheels, step-through frame, saddle, basket
- * and carrier; about 190 vertices (140 when `lite`).
+ * and carrier. Full-detail bikes have rounder wheels and an open basket; `lite` keeps its six-sided wheels.
  */
 export function bicycle(c: Ctx, fr: Fx, color: RGB, lite = false): void {
   const b = c.main.at(fr.x, fr.z);
-  const n = lite ? 6 : 8;
-  for (const v of [-7, 7]) annulus(b, fr.p(0, 4.1, v), fr.d(1, 0, 0), UPV, 4.1, 3.5, n, TIRE);
+  const previousSurface = b.surface; b.surface = SURF.paintedMetal;
+  const n = lite ? 6 : 12;
+  for (const v of [-7, 7]) {
+    annulus(b, fr.p(0, 4.1, v), fr.d(1, 0, 0), UPV, 4.1, 3.5, n, TIRE);
+    if (!lite) for (let i = 0; i < 6; i++) {
+      const a = i * Math.PI / 3;
+      rod(b, fr, [4.1, v], [4.1 + Math.sin(a) * 3.5, v + Math.cos(a) * 3.5], .11, GREY);
+    }
+  }
   // key points as (y, v)
   const R = [4.1, -7] as const;
   const F = [4.1, 7] as const;
@@ -125,9 +138,18 @@ export function bicycle(c: Ctx, fr: Fx, color: RGB, lite = false): void {
   fr.facade(b, -3.4, 3.4, 13.0, 13.8, 4.6, 1, GREY);
   fr.box(b, -1.2, 1.2, 11.9, 12.9, -6.4, -2.2, hex(0x2d2d30), { front: false, back: false });
   if (!lite) {
-    fr.box(b, -2.4, 2.4, 11.2, 13.6, 6.4, 9.8, hex(0xb4bac2), { top: false, back: false, bottom: true });
+    // A small open wire basket instead of an opaque block, within its original bounds.
+    const basket = hex(0x91999e);
+    fr.floor(b, -2.4, 2.4, 6.4, 9.8, 11.2, basket);
+    for (const y of [11.2, 12.35, 13.42]) {
+      fr.facade(b, -2.4, 2.4, y, y + .18, 9.8, 1, basket);
+      for (const u of [-2.4, 2.4]) b.quad(fr.p(u, y, 6.4), fr.p(u, y, 9.8), fr.p(u, y + .18, 9.8), fr.p(u, y + .18, 6.4), basket, fr.d(u < 0 ? -1 : 1, 0, 0));
+    }
+    for (const u of [-2.4, -1.2, 0, 1.2, 2.4]) fr.facade(b, Math.max(-2.4, u - .06), Math.min(2.4, u + .06), 11.2, 13.6, 9.8, 1, basket);
+    for (const u of [-2.4, 2.4]) for (const v of [6.4, 7.53, 8.67]) b.quad(fr.p(u, 11.2, v), fr.p(u, 11.2, v + .12), fr.p(u, 13.6, v + .12), fr.p(u, 13.6, v), basket, fr.d(u < 0 ? -1 : 1, 0, 0));
     fr.floor(b, -2, 2, -11, -5, 8.6, hex(0x8a9099));
   }
+  b.surface = previousSurface;
 }
 
 // ---- plants --------------------------------------------------------------------------------------------------------
@@ -140,6 +162,7 @@ export function pottedPlant(c: Ctx, x: number, z: number, y0: number, r: () => n
   b.cylinder(x, z, y0, y0 + h, 3.0, 2.3, 6, pot, false);
   b.disc(x, z, y0 + h + 0.2, 2.8, 2.8, 6, SOIL);
   const leaf = pick(FOLIAGE, r);
+  const foliageStart = [b.pos.length, b.nor.length, b.col.length, b.surf.length, b.idx.length, b.uvs.length];
   const k = r();
   if (k < 0.3) {
     // a tall leafy plant (観葉植物)
@@ -156,6 +179,11 @@ export function pottedPlant(c: Ctx, x: number, z: number, y0: number, r: () => n
   } else {
     b.blob(x, y0 + h + 3.6, z, 4.7, 3.8, 4.7, leaf, 0.1, x * 3 + z);
   }
+  if (c.foliage) {
+    [b.pos.length, b.nor.length, b.col.length, b.surf.length, b.idx.length, b.uvs.length] = foliageStart as [number, number, number, number, number, number];
+    plantCards(c, x, y0 + h, z, k < .3 ? 13 : 9, k < .3 ? 'plantRubber' : k < .72 ? 'shrubBloom' : 'plantSword', (x + z) % Math.PI);
+  }
+
 }
 
 /** A long planter box (プランター) with shrubs and flowers, 130-180 vertices. */
@@ -168,35 +196,54 @@ export function planter(c: Ctx, fr: Fx, len: number, r: () => number): void {
   for (let i = 0; i < n; i++) {
     const u = -len / 2 + ((i + 0.5) * len) / n;
     const q = fr.p(u, 4.5, (r() - 0.5) * 1.2);
+    const start = [b.pos.length, b.nor.length, b.col.length, b.surf.length, b.idx.length, b.uvs.length];
     puff(b, q[0], q[1] + 2.2, q[2], 3.4, 2.6, 3.2, pick(FOLIAGE, r), i + fr.x);
     if (i % 2 === 0) puff(b, q[0] + 0.5, q[1] + 4.6, q[2], 2.2, 1.7, 2.2, bloom, i + fr.z);
+    if (c.foliage) {
+      // Keep every legacy random draw, replacing only the new foliage geometry.
+      [b.pos.length, b.nor.length, b.col.length, b.surf.length, b.idx.length, b.uvs.length] = start as [number, number, number, number, number, number];
+      plantCards(c, q[0], q[1], q[2], 7.8, i % 3 === 0 ? 'bedDaisy' : i % 3 === 1 ? 'bedPansy' : 'bedNemo', Math.atan2(fr.rz, fr.rx));
+    }
   }
 }
 
 // ---- benches, post boxes, bollards, guard pipes --------------------------------------------------------------------
 
-/** A park bench (ベンチ), 120 vertices. */
+/** A park bench (ベンチ) with separated boards and the original seat height. */
 export function bench(c: Ctx, fr: Fx): void {
-  const b = c.main.at(fr.x, fr.z);
-  for (const u of [-7.6, 7.6]) fr.box(b, u - 0.6, u + 0.6, 0, 5.5, -2.3, 2.3, DARK, { bottom: false });
-  fr.box(b, -9.2, 9.2, 5.5, 6.5, -2.6, 2.6, WOOD);
-  fr.box(b, -9.2, 9.2, 7.4, 12.4, -2.8, -2.1, WOOD);
-  fr.box(b, -9.0, -8.2, 6.5, 7.4, -2.6, -2.2, DARK, { bottom: false });
-  fr.box(b, 8.2, 9.0, 6.5, 7.4, -2.6, -2.2, DARK, { bottom: false });
+  const b = c.main.at(fr.x, fr.z), previousSurface = b.surface;
+  b.surface = SURF.paintedMetal;
+  for (const u of [-7.6, 7.6]) fr.box(b, u - .6, u + .6, 0, 5.5, -2.3, 2.3, DARK, { bottom: false });
+  b.surface = SURF.plain;
+  // Seat height, centre plank and the old bounding rectangle stay unchanged.
+  for (const v of [-2.6, -.8, 1]) fr.box(b, -9.2, 9.2, 5.5, 6.5, v, v + 1.6, WOOD);
+  for (const y of [7.4, 9.2, 11]) fr.box(b, -9.2, 9.2, y, y + 1.4, -2.8, -2.1, WOOD);
+  b.surface = SURF.paintedMetal;
+  for (const u of [-8.6, 8.6]) fr.box(b, u - .4, u + .4, 6.5, 12, -2.6, -2.2, DARK, { bottom: false });
+  b.surface = previousSurface;
 }
 
 /** A red round post box (丸ポスト): body, domed top, slot and plate, 180 vertices. */
 export function postBox(c: Ctx, fr: Fx): void {
   const b = c.main.at(fr.x, fr.z);
   const sb = c.signs.at(fr.x, fr.z);
-  b.cylinder(fr.x, fr.z, fr.y, fr.y + 14.5, 2.9, 2.9, 8, POST_RED, false);
+  const previousSurface = b.surface; b.surface = SURF.paintedMetal;
+  const first = b.vertexCount;
+  b.cylinder(fr.x, fr.z, fr.y, fr.y + 14.5, 2.9, 2.9, 12, POST_RED, false);
   // the domed hat: a lip that overhangs the body, then a rounded shoulder
-  b.cylinder(fr.x, fr.z, fr.y + 14.5, fr.y + 16.4, 3.3, 3.0, 8, POST_RED, false);
-  b.cylinder(fr.x, fr.z, fr.y + 16.4, fr.y + 18.2, 3.0, 1.3, 8, POST_RED, true);
+  b.cylinder(fr.x, fr.z, fr.y + 14.5, fr.y + 16.4, 3.3, 3.0, 12, POST_RED, false);
+  b.cylinder(fr.x, fr.z, fr.y + 16.4, fr.y + 18.2, 3.0, 1.3, 12, POST_RED, true);
+  // Smooth the round body and shoulder while keeping the cap normal vertical.
+  for (let i = first; i < b.vertexCount; i++) {
+    const p = i * 3, x = b.pos[p]! - fr.x, z = b.pos[p + 2]! - fr.z;
+    const radius = Math.hypot(x, z), y = b.nor[p + 1]!, horizontal = Math.sqrt(Math.max(0, 1 - y * y));
+    if (radius > .01) { b.nor[p] = x / radius * horizontal; b.nor[p + 2] = z / radius * horizontal; }
+  }
   // the slot below the dome and the white plate on the front
   fr.facade(b, -1.9, 1.9, 9.6, 11, 3.0, 1, hex(0x2a1210));
   const uv = tileUv(c.atlas.uv(SIGN.misc), 2, 4, 0.0004, 0.0003);
   signQuad(sb, fr.p(0, 5.2, 2.97), fr.d(0, 0, 1), UPV, 3.6, 3.6, uv);
+  b.surface = previousSurface;
 }
 
 /** A bollard (車止め): white post with a red reflective band, 90 vertices. */
@@ -250,6 +297,8 @@ const LAMP_POLE = hex(0x474c52);
  * tile `banner` of the banner sheet). `fr` faces the road.
  */
 export function streetLamp(c: Ctx, fr: Fx, banner = -1): void {
+  const light = fr.p(0, 43.9, 12.1);
+  c.lamps?.push({ x: light[0], y: light[1], z: light[2] });
   const b = c.main.at(fr.x, fr.z);
   b.cylinder(fr.x, fr.z, fr.y, fr.y + 40, 1.05, 0.7, 6, LAMP_POLE, false);
   const a = fr.p(0, 40, 0);
@@ -264,8 +313,13 @@ export function streetLamp(c: Ctx, fr: Fx, banner = -1): void {
     const uv = tileUv(c.atlas.uv(SIGN.banners), banner % 4, 4, 0.0004, 0.0003);
     fr.box(b, -0.3, 0.3, 33.3, 33.9, 0.6, 5.4, GREY, { front: false, back: false });
     for (const s of [1, -1] as const) {
-      signQuad(sb, fr.p(s * 0.18, 27.6, 3.1), fr.d(s, 0, 0), UPV, 3.4, 11.4, uv);
-      panel(b, fr.p(s * 0.08, 27.6, 3.1), fr.d(-s, 0, 0), UPV, 3.4, 11.4, hex(0xefe3e6));
+      if (c.cloth) {
+        const v0 = s > 0 ? 1.4 : 4.8, v1 = s > 0 ? 4.8 : 1.4;
+        c.cloth.panel([fr.p(s * .18, 21.9, v0), fr.p(s * .18, 21.9, v1), fr.p(s * .18, 33.3, v1), fr.p(s * .18, 33.3, v0)], fr.d(s, 0, 0), uv);
+      } else {
+        signQuad(sb, fr.p(s * 0.18, 27.6, 3.1), fr.d(s, 0, 0), UPV, 3.4, 11.4, uv);
+        panel(b, fr.p(s * 0.08, 27.6, 3.1), fr.d(-s, 0, 0), UPV, 3.4, 11.4, hex(0xefe3e6));
+      }
     }
   }
 }

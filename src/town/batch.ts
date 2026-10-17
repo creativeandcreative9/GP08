@@ -1,4 +1,7 @@
-import { Mesh, VertexData, type Material, type Scene } from '@babylonjs/core';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
+import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData.js';
+import { type Material } from '@babylonjs/core/Materials/material.js';
+import { type Scene } from '@babylonjs/core/scene.js';
 import { SURF, SURF_KIND } from '../surface';
 import type { RGB, V3 } from './util';
 
@@ -21,6 +24,10 @@ const ICO_F: [number, number, number][] = [
 ];
 
 const UP: V3 = [0, 1, 0];
+
+/** A tuple of four triples (one per card corner) rather than a single triple. */
+const isRGB4 = (c: RGB | readonly [RGB, RGB, RGB, RGB]): c is readonly [RGB, RGB, RGB, RGB] => typeof c[0] !== 'number';
+const isV34 = (n: V3 | readonly [V3, V3, V3, V3]): n is readonly [V3, V3, V3, V3] => typeof n[0] !== 'number';
 
 /**
  * Accumulates flat-shaded, vertex-coloured geometry that is later turned into ONE mesh
@@ -53,6 +60,12 @@ export class MeshBatch {
   }
   get empty(): boolean {
     return this.idx.length === 0;
+  }
+
+  appendSurface(count: number): void {
+    const tag = this.surface + 10 * this.axis;
+    for (let i = 0; i < count; i++) this.surf.push(tag);
+    if (tag !== 0) this.tagged = true;
   }
 
   private push(p: V3, n: V3, c: RGB, u = 0, v = 0): void {
@@ -93,8 +106,41 @@ export class MeshBatch {
 
   /** Quad a,b,c,d in order around the perimeter. `uv` = four [u,v] pairs. */
   quad(a: V3, b: V3, c: V3, d: V3, color: RGB, hint?: V3, uv?: [number, number][]): void {
-    this.tri(a, b, c, color, hint, uv ? [uv[0]!, uv[1]!, uv[2]!] : undefined);
-    this.tri(a, c, d, color, hint, uv ? [uv[0]!, uv[2]!, uv[3]!] : undefined);
+    const ab = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+    const ac = [c[0] - a[0], c[1] - a[1], c[2] - a[2]];
+    const cross: V3 = [ab[1]! * ac[2]! - ab[2]! * ac[1]!, ab[2]! * ac[0]! - ab[0]! * ac[2]!, ab[0]! * ac[1]! - ab[1]! * ac[0]!];
+    const length = Math.hypot(...cross);
+    // Non-planar terrain quads retain their two original face normals.
+    if (length < 1e-9 || Math.abs((d[0] - a[0]) * cross[0] + (d[1] - a[1]) * cross[1] + (d[2] - a[2]) * cross[2]) / length > .0001) {
+      this.tri(a, b, c, color, hint, uv ? [uv[0]!, uv[1]!, uv[2]!] : undefined);
+      this.tri(a, c, d, color, hint, uv ? [uv[0]!, uv[2]!, uv[3]!] : undefined);
+      return;
+    }
+    const along = !hint || cross[0] * hint[0] + cross[1] * hint[1] + cross[2] * hint[2] >= 0;
+    const n = cross.map(v => v / length * (along ? 1 : -1)) as unknown as V3;
+    const base = this.vertexCount;
+    [a, b, c, d].forEach((p, i) => this.push(p, n, color, uv?.[i]?.[0], uv?.[i]?.[1]));
+    if (along) this.idx.push(base, base + 2, base + 1, base, base + 3, base + 2);
+    else this.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
+  }
+
+  /**
+   * An indexed card: four vertices and two triangles with the normals GIVEN (not derived from the corners), per
+   * corner colours and uv. For double-sided foliage sprites (leaf.ts): the normal points away from the crown, not
+   * out of the card, so that sun and shadows shade a whole canopy softly instead of card by card. The winding is
+   * irrelevant because the foliage materials do not cull back faces.
+   */
+  card(
+    p: readonly [V3, V3, V3, V3],
+    color: RGB | readonly [RGB, RGB, RGB, RGB],
+    normal: V3 | readonly [V3, V3, V3, V3],
+    uv: readonly (readonly [number, number])[],
+  ): void {
+    const cs = isRGB4(color) ? color : [color, color, color, color];
+    const ns = isV34(normal) ? normal : [normal, normal, normal, normal];
+    const base = this.vertexCount;
+    for (let i = 0; i < 4; i++) this.push(p[i]!, ns[i]!, cs[i]!, uv[i]![0], uv[i]![1]);
+    this.idx.push(base, base + 1, base + 2, base, base + 2, base + 3);
   }
 
   /** Axis-aligned box. */

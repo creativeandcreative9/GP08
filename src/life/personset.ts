@@ -1,4 +1,5 @@
-import type { Scene, StandardMaterial } from '@babylonjs/core';
+import { type Scene } from '@babylonjs/core/scene.js';
+import { type StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
 import type { Rendering } from '../render';
 import type { MeshBatch } from '../town/batch';
 import { buildPerson, buildSeated, type Outfit, type PersonParts } from './people';

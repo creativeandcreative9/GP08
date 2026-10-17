@@ -1,3 +1,4 @@
+import { SURF } from '../surface';
 import type { Ctx } from './ctx';
 import type { Frame } from './frame';
 import { HB, Wall, drift, tone, type Face, type Rng } from './housekit';
@@ -68,7 +69,9 @@ export function buildApartment(p: AptPlan): void {
     for (let fl = 0; fl < floors; fl++) {
       const y0 = BASE + fl * floorH;
       const col = fl === 0 ? ground : wall;
+      h.surf(tower ? SURF.panel : floors >= 5 ? SURF.tile : SURF.siding, () => {
       w.qm(-half, half, y0, y0 + floorH, 0, tone(col, fl === 0 ? 0.9 : 0.97), tone(col, fl === 0 ? 1.0 : 0.96), rnd, 0.05);
+      });
       if (fl > 0) w.q(-half - 0.4, half + 0.4, y0 - 1.6, y0 + 0.9, 0.4, tone(band, 0.92), band);
     }
   }

@@ -59,20 +59,21 @@ function loft(b: MeshBatch, st: readonly Station[], spans: readonly Span[], rear
       const a1 = P(sd * s1.a[0], s1.a[1], s1.z);
       const b0 = P(sd * s0.b[0], s0.b[1], s0.z);
       const b1 = P(sd * s1.b[0], s1.b[1], s1.z);
-      const c0 = P(sd * s0.c[0], s0.c[1], s0.z);
-      const c1 = P(sd * s1.c[0], s1.c[1], s1.z);
+      const c0 = P(sd * s0.c[0], Math.max(s0.b[1], s0.c[1] - .4), s0.z);
+      const c1 = P(sd * s1.c[0], Math.max(s1.b[1], s1.c[1] - .4), s1.z);
       faceQuad(b, a0, a1, b1, b0, sp[0], c);
       faceQuad(b, b0, b1, c1, c0, sp[1], c);
+      faceQuad(b, c0, c1, P(sd * (s1.c[0] - .55), s1.c[1], s1.z), P(sd * (s0.c[0] - .55), s0.c[1], s0.z), sp[2], c);
     }
     // top: right edge to left edge
-    faceQuad(b, P(s0.c[0], s0.c[1], s0.z), P(-s0.c[0], s0.c[1], s0.z), P(-s1.c[0], s1.c[1], s1.z), P(s1.c[0], s1.c[1], s1.z), sp[2], c);
+    faceQuad(b, P(s0.c[0] - .55, s0.c[1], s0.z), P(-s0.c[0] + .55, s0.c[1], s0.z), P(-s1.c[0] + .55, s1.c[1], s1.z), P(s1.c[0] - .55, s1.c[1], s1.z), sp[2], c);
     // floor
     faceQuad(b, P(s0.a[0], s0.a[1], s0.z), P(-s0.a[0], s0.a[1], s0.z), P(-s1.a[0], s1.a[1], s1.z), P(s1.a[0], s1.a[1], s1.z), FLOOR, [0, 5, cz]);
   }
   // end faces
   const endCap = (s: Station, cols: [RGB, RGB], inside: V3): void => {
     faceQuad(b, P(s.a[0], s.a[1], s.z), P(-s.a[0], s.a[1], s.z), P(-s.b[0], s.b[1], s.z), P(s.b[0], s.b[1], s.z), cols[0], inside);
-    faceQuad(b, P(s.b[0], s.b[1], s.z), P(-s.b[0], s.b[1], s.z), P(-s.c[0], s.c[1], s.z), P(s.c[0], s.c[1], s.z), cols[1], inside);
+    fan(b, [P(s.b[0], s.b[1], s.z), P(-s.b[0], s.b[1], s.z), P(-s.c[0], Math.max(s.b[1], s.c[1] - .4), s.z), P(-s.c[0] + .55, s.c[1], s.z), P(s.c[0] - .55, s.c[1], s.z), P(s.c[0], Math.max(s.b[1], s.c[1] - .4), s.z)], cols[1], [0, 0, s.z - inside[2]]);
   };
   const first = st[0]!;
   const last = st[st.length - 1]!;

@@ -1,16 +1,14 @@
-import {
-  Color3,
-  DynamicTexture,
-  Mesh,
-  MeshBuilder,
-  StandardMaterial,
-  Texture,
-  TransformNode,
-  Vector3,
-  VertexBuffer,
-  VertexData,
-  type Scene,
-} from '@babylonjs/core';
+import { Color3 } from '@babylonjs/core/Maths/math.color.js';
+import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTexture.js';
+import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { Texture } from '@babylonjs/core/Materials/Textures/texture.js';
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { VertexBuffer } from '@babylonjs/core/Buffers/buffer.js';
+import { VertexData } from '@babylonjs/core/Meshes/mesh.vertexData.js';
+import { type Scene } from '@babylonjs/core/scene.js';
 import { makeRng } from './town/util';
 
 /** Sky colours: a pale hazy horizon rising to a clear spring blue. */
@@ -39,7 +37,7 @@ function createDome(scene: Scene): Mesh {
     const c = e < 0.18 ? Color3.Lerp(HORIZON, MID, Math.pow(e / 0.18, 0.8)) : Color3.Lerp(MID, ZENITH, Math.min(1, Math.pow((e - 0.18) / 0.62, 0.7)));
     colors.push(c.r, c.g, c.b, 1);
   }
-  sky.setVerticesData(VertexBuffer.ColorKind, colors);
+  sky.setVerticesData(VertexBuffer.ColorKind, colors, true);
   sky.material = unlit(scene, 'skyMat');
   sky.infiniteDistance = true;
   sky.isPickable = false;
@@ -48,7 +46,7 @@ function createDome(scene: Scene): Mesh {
   return sky;
 }
 
-/** Paints a soft cumulus cloud (white tops, blue-grey flat bottoms) into a transparent texture. */
+/** Paints translucent spring cloud filaments; opacity fades continuously through the wispy edges. */
 function cloudTexture(scene: Scene, seed: number): DynamicTexture {
   const W = 512;
   const H = 256;
@@ -67,31 +65,39 @@ function cloudTexture(scene: Scene, seed: number): DynamicTexture {
     const rad = 34 + hump * (40 + r() * 34);
     puffs.push([x, base - rad * (0.55 + r() * 0.35), rad]);
   }
-  // body: overlapping soft discs
-  for (const [x, y, rad] of puffs) {
-    const gr = g.createRadialGradient(x, y - rad * 0.2, rad * 0.1, x, y, rad);
-    gr.addColorStop(0, 'rgba(255,255,255,1)');
-    gr.addColorStop(0.65, 'rgba(250,251,255,0.95)');
-    gr.addColorStop(1, 'rgba(240,244,252,0)');
-    g.fillStyle = gr;
-    g.beginPath();
-    g.arc(x, y, rad, 0, Math.PI * 2);
-    g.fill();
+  // A coherent density field breaks up the silhouette and shades smaller billows inside it.
+  // This is painted once; it adds no per-frame noise or cloud geometry.
+  const grid = Array.from({ length: 64 * 32 }, () => r());
+  const noise = (x: number, y: number): number => {
+    const ix = Math.floor(x), iy = Math.floor(y), fx = x - ix, fy = y - iy;
+    const u = fx * fx * (3 - 2 * fx), v = fy * fy * (3 - 2 * fy);
+    const at = (dx: number, dy: number): number => grid[((iy + dy) & 31) * 64 + ((ix + dx) & 63)]!;
+    return (at(0, 0) * (1 - u) + at(1, 0) * u) * (1 - v) + (at(0, 1) * (1 - u) + at(1, 1) * u) * v;
+  };
+  const smooth = (a: number, b: number, x: number): number => { const t = Math.max(0, Math.min(1, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
+  const pixels = g.createImageData(W, H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const coarse = noise(x / 24, y / 24), fine = noise(x / 7, y / 7);
+    let density = 0;
+    for (const [px, py, radius] of puffs) {
+      const dx = (x - px) / radius;
+      const curl = Math.sin(x / 65 + px / 43) * (4 + fine * 4);
+      const dy = (y - py - curl - (x - W * .5) * .12) / (radius * .22);
+      density += Math.exp(-dx * dx * 1.8 - dy * dy * 1.6);
+    }
+    // Wind stretches the small density changes into filaments rather than circular puffs.
+    const filaments = .75 * noise(x / 48 + y / 35, y / 3.8) + .25 * noise(x / 19, y / 1.9);
+    const alpha = Math.min(.95, (1 - Math.exp(-density * .9)) * (.35 + .65 * coarse) * (.65 + .35 * filaments) * 1.12)
+      * (1 - smooth(base - 10, base + 18, y));
+    const under = smooth(base - 90, base + 8, y), billow = .7 * coarse + .3 * fine;
+    const light = .99 - under * .05 - (1 - billow) * .025;
+    const i = (y * W + x) * 4;
+    pixels.data[i] = 255 * light - under * 6;
+    pixels.data[i + 1] = 255 * light - under * 2;
+    pixels.data[i + 2] = Math.min(255, 255 * light + under * 7);
+    pixels.data[i + 3] = alpha * 245;
   }
-  // shade the lower part and cut a soft flat bottom
-  g.globalCompositeOperation = 'source-atop';
-  const sh = g.createLinearGradient(0, base - 90, 0, base + 10);
-  sh.addColorStop(0, 'rgba(160,175,205,0)');
-  sh.addColorStop(1, 'rgba(160,175,205,0.55)');
-  g.fillStyle = sh;
-  g.fillRect(0, 0, W, H);
-  g.globalCompositeOperation = 'destination-out';
-  const cut = g.createLinearGradient(0, base - 6, 0, base + 18);
-  cut.addColorStop(0, 'rgba(0,0,0,0)');
-  cut.addColorStop(1, 'rgba(0,0,0,1)');
-  g.fillStyle = cut;
-  g.fillRect(0, base - 6, W, H - base + 6);
-  g.globalCompositeOperation = 'source-over';
+  g.putImageData(pixels, 0, 0);
   tex.update(true);
   return tex;
 }
@@ -109,13 +115,23 @@ function createClouds(scene: Scene): TransformNode {
     return m;
   });
   const rnd = makeRng(4242);
-  for (let i = 0; i < 26; i++) {
-    const a = rnd() * Math.PI * 2;
-    const dist = 9000 + rnd() * 14000;
-    const elev = 0.06 + Math.pow(rnd(), 1.6) * 0.32; // mostly low over the horizon
-    const w = 2600 + rnd() * 3800;
-    const card = MeshBuilder.CreatePlane(`cloud${i}`, { width: w, height: w / 2 }, scene);
+  for (let i = 0; i < 32; i++) {
+    // A sparse middle layer makes the sky readable from every street direction.
+    const middle = i >= 26;
+    const a = middle ? .35 + (i - 26) * Math.PI / 3 : rnd() * Math.PI * 2;
+    const dist = middle ? 18000 : 9000 + rnd() * 14000;
+    const elev = middle ? .26 : .06 + Math.pow(rnd(), 1.6) * .32;
+    const w = middle ? 6500 : 2600 + rnd() * 3800;
+    const card = MeshBuilder.CreatePlane(`cloud${i}`, { width: w, height: w / (i % 3 === 0 ? 4.2 : 2.7) }, scene);
     card.position = new Vector3(400 + Math.cos(a) * dist, 600 + Math.tan(elev) * dist, 100 + Math.sin(a) * dist);
+    // Rotate the geometry in its own plane: billboard orientation keeps the fine slant in every view.
+    const points = card.getVerticesData(VertexBuffer.PositionKind)!;
+    const angle = .18 * Math.sin(i * 2.39 + 1.2), ca = Math.cos(angle), sa = Math.sin(angle);
+    for (let k = 0; k < points.length; k += 3) {
+      const x = points[k]!, y = points[k + 1]!;
+      points[k] = x * ca - y * sa; points[k + 1] = x * sa + y * ca;
+    }
+    card.setVerticesData(VertexBuffer.PositionKind, points); card.refreshBoundingInfo();
     card.billboardMode = Mesh.BILLBOARDMODE_ALL;
     card.material = mats[i % mats.length]!;
     card.applyFog = false;

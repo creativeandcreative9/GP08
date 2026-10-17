@@ -1,4 +1,9 @@
-import { Color3, MeshBuilder, StandardMaterial, Vector3, type ArcRotateCamera, type Scene } from '@babylonjs/core';
+import { Color3 } from '@babylonjs/core/Maths/math.color.js';
+import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
+import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
+import { type ArcRotateCamera } from '@babylonjs/core/Cameras/arcRotateCamera.js';
+import { type Scene } from '@babylonjs/core/scene.js';
 import type { Rendering } from '../render';
 import { MeshBatch } from '../town/batch';
 import { buildWheel, CAR_KINDS } from './carmodels';

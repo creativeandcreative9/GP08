@@ -1,6 +1,6 @@
 import { MeshBatch } from '../town/batch';
 import { hex, type RGB, type V3 } from '../town/util';
-import { boxC, ellipsoid, mergeInto, mixRGB, octBand, plate, prism, shadeRGB, taperBox, type Oct } from './geom';
+import { boxC, ellipsoid, mergeInto, mixRGB, roundedOctBand as octBand, plate, prism, shadeRGB, taperBox, type Oct } from './geom';
 
 /**
  * Stylised low-poly people (about 21 units = 1.7 m for an adult). Local frame: +Z forward, +X to the person's right,
@@ -70,9 +70,9 @@ export interface Dims {
 }
 
 export const DIMS: Record<Build, Dims> = {
-  man: { legLen: 9.8, hipX: 1.45, hipHalf: 2.85, waistHalf: 2.65, chestHalf: 3.0, shoulderHalf: 3.3, depth: 1.8, torsoLen: 6.9, neckLen: 0.8, neckR: 0.85, headRx: 1.62, headRy: 1.95, headRz: 1.72, armLen: 8.2, armR: 0.85, legR: 1.45 },
-  woman: { legLen: 9.3, hipX: 1.4, hipHalf: 3.0, waistHalf: 2.2, chestHalf: 2.65, shoulderHalf: 2.9, depth: 1.6, torsoLen: 6.3, neckLen: 0.75, neckR: 0.75, headRx: 1.56, headRy: 1.86, headRz: 1.66, armLen: 7.6, armR: 0.75, legR: 1.4 },
-  child: { legLen: 6.4, hipX: 1.1, hipHalf: 2.2, waistHalf: 2.0, chestHalf: 2.2, shoulderHalf: 2.35, depth: 1.5, torsoLen: 4.6, neckLen: 0.5, neckR: 0.7, headRx: 1.95, headRy: 2.15, headRz: 2.0, armLen: 5.5, armR: 0.65, legR: 1.05 },
+  man: { legLen: 10.16, hipX: 1.2, hipHalf: 2.35, waistHalf: 2.15, chestHalf: 2.5, shoulderHalf: 2.8, depth: 1.6, torsoLen: 7.35, neckLen: 0.8, neckR: 0.7, headRx: 1.23, headRy: 1.5, headRz: 1.38, armLen: 7.4, armR: 0.7, legR: 1.15 },
+  woman: { legLen: 9.688, hipX: 1.2, hipHalf: 2.45, waistHalf: 1.85, chestHalf: 2.2, shoulderHalf: 2.45, depth: 1.4, torsoLen: 6.65, neckLen: 0.75, neckR: 0.65, headRx: 1.18, headRy: 1.45, headRz: 1.3, armLen: 6.9, armR: 0.65, legR: 1.1 },
+  child: { legLen: 7, hipX: .9, hipHalf: 1.75, waistHalf: 1.6, chestHalf: 1.9, shoulderHalf: 2.05, depth: 1.3, torsoLen: 5.17, neckLen: .5, neckR: .55, headRx: 1.35, headRy: 1.5, headRz: 1.45, armLen: 5.5, armR: .55, legR: .85 },
 };
 
 export interface PersonParts {
@@ -95,7 +95,7 @@ const SHOULDER_DROP = 0.7;
 
 export const SKIN_TONES: RGB[] = [hex(0xf5cfb6), hex(0xefc2a4), hex(0xe6b392), hex(0xf8d8c4)];
 
-interface HeadFrame {
+export interface HeadFrame {
   cy: number;
   /** forward offset of the head (stoop) */
   hz: number;
@@ -104,48 +104,41 @@ interface HeadFrame {
   rz: number;
 }
 
-function headSections(h: HeadFrame, grow = 0): Oct[] {
-  const { cy, hz, rx, ry, rz } = h;
-  const g = grow;
-  return [
-    { y: cy - 0.92 * ry - g * 0.3, a: 0.52 * rx + g, c: 0.55 * rz + g, k: 0.35 * rx, cz: hz },
-    { y: cy - 0.5 * ry, a: 0.9 * rx + g, c: 0.92 * rz + g, k: 0.4 * rx, cz: hz },
-    { y: cy + 0.3 * ry, a: rx + g, c: rz + g, k: 0.42 * rx, cz: hz },
-    { y: cy + 0.78 * ry, a: 0.92 * rx + g, c: 0.92 * rz + g, k: 0.5 * rx, cz: hz },
-    { y: cy + ry + g * 0.6, a: 0.62 * rx + g, c: 0.62 * rz + g, k: 0.4 * rx, cz: hz },
-  ];
-}
-
-/** z of the front face of the head at height y (linear between the head sections) */
+/** z of the front face on the head's vertical centreline. */
 function headFrontZ(h: HeadFrame, y: number): number {
-  const s = headSections(h);
-  for (let i = 0; i + 1 < s.length; i++) {
-    const a = s[i]!;
-    const b = s[i + 1]!;
-    if (y >= a.y && y <= b.y) {
-      const t = (y - a.y) / (b.y - a.y);
-      return a.cz! + a.c + (b.c - a.c) * t;
-    }
-  }
-  return h.hz + h.rz;
+  const t = Math.max(-1, Math.min(1, (y - h.cy) / h.ry));
+  return h.hz + h.rz * Math.sqrt(1 - t * t);
 }
 
 function buildHead(b: MeshBatch, h: HeadFrame, skin: RGB): void {
-  const s = headSections(h);
-  for (let i = 0; i + 1 < s.length; i++) octBand(b, s[i]!, s[i + 1]!, skin, { top: i === s.length - 2 ? skin : undefined });
-  const eyeY = h.cy - 0.04 * h.ry;
-  const ez = headFrontZ(h, eyeY) + 0.03;
-  const ex = 0.46 * h.rx;
-  const ew = Math.max(0.2, 0.15 * h.rx);
-  const eh = Math.max(0.3, 0.2 * h.ry);
+  ellipsoid(b, 0, h.cy, h.hz, h.rx, h.ry, h.rz, skin, { seg: 12, rings: 8, phase: 0, smooth: true });
+  // Small patches follow the face, including the cheeks at the side of the ellipsoid.
+  // A single forward plane leaves these features visibly floating in a three-quarter view.
+  const patch = (cx: number, cy: number, width: number, height: number, color: RGB, lift = .035): void => {
+    const first = b.vertexCount;
+    for (let row = 0; row <= 2; row++) for (let col = 0; col <= 2; col++) {
+      const x = cx + (col - 1) * width, y = cy + (row - 1) * height;
+      const z = h.rz * Math.sqrt(Math.max(.01, 1 - (x / h.rx) ** 2 - ((y - h.cy) / h.ry) ** 2));
+      const nx = x / (h.rx * h.rx), ny = (y - h.cy) / (h.ry * h.ry), nz = z / (h.rz * h.rz), length = Math.hypot(nx, ny, nz);
+      b.pos.push(x, y, h.hz + z + lift); b.nor.push(nx / length, ny / length, nz / length); b.col.push(...color, 1);
+      if (b.withUV) b.uvs.push(0, 0);
+    }
+    b.appendSurface(9);
+    for (let row = 0; row < 2; row++) for (let col = 0; col < 2; col++) {
+      const i = first + row * 3 + col; b.idx.push(i, i + 4, i + 1, i, i + 3, i + 4);
+    }
+  };
+  const eyeY = h.cy - .04 * h.ry, ex = .42 * h.rx;
+  const ew = Math.max(.14, .12 * h.rx), eh = Math.max(.15, .105 * h.ry);
   for (const sd of [-1, 1]) {
-    plate(b, [sd * ex, eyeY, ez], [ew, 0, 0], [0, eh, 0], DARK, [0, 0, 1]);
-    plate(b, [sd * ex, eyeY + eh + 0.14, ez - 0.01], [ew * 1.15, 0, 0], [0, 0.07, 0], shadeRGB(DARK, 1.8), [0, 0, 1]);
-    plate(b, [sd * ex * 1.5, eyeY - eh - 0.3, ez - 0.02], [ew * 0.8, 0, 0], [0, 0.17, 0], mixRGB(skin, [0.95, 0.5, 0.5], 0.35), [0, 0, 1]);
+    patch(sd * ex, eyeY, ew, eh, DARK);
+    patch(sd * ex - ew * .2, eyeY + eh * .35, ew * .22, eh * .2, WHITE, .06);
+    patch(sd * ex, eyeY + eh + .12, ew * 1.15, .045, shadeRGB(DARK, 1.8));
+    patch(sd * ex * 1.5, eyeY - eh - .25, ew * .8, .10, mixRGB(skin, [.95, .5, .5], .25));
   }
   const nz = headFrontZ(h, eyeY - 0.35 * h.ry);
   taperBox(b, eyeY - 0.5 * h.ry, eyeY - 0.12 * h.ry, { x0: -0.2, x1: 0.2, z0: nz - 0.1, z1: nz + 0.28 }, { x0: -0.1, x1: 0.1, z0: nz - 0.1, z1: nz + 0.22 }, shadeRGB(skin, 0.94));
-  plate(b, [0, eyeY - 0.62 * h.ry, headFrontZ(h, eyeY - 0.62 * h.ry) + 0.03], [0.34, 0, 0], [0, 0.07, 0], mixRGB(skin, [0.75, 0.3, 0.3], 0.7), [0, 0, 1]);
+  patch(0, eyeY - .62 * h.ry, .28, .045, mixRGB(skin, [.75, .3, .3], .6));
   for (const sd of [-1, 1]) boxC(b, sd * (h.rx + 0.05), eyeY - 0.1, h.hz - 0.1, 0.12, 0.45, 0.38, shadeRGB(skin, 0.95));
 }
 
@@ -156,26 +149,18 @@ function buildHair(b: MeshBatch, h: HeadFrame, style: HairStyle, col: RGB, hat: 
   const c2 = shadeRGB(col, 1.18);
   if (style !== 'thin') {
     // crown cap from the hairline over the top
-    const s0: Oct = { y: cy + 0.42 * ry, a: rx + g, c: rz + g, k: 0.42 * rx, cz: hz };
-    const s1: Oct = { y: cy + 0.78 * ry, a: 0.92 * rx + g, c: 0.92 * rz + g, k: 0.5 * rx, cz: hz };
-    const s2: Oct = { y: cy + ry + g * 0.6, a: 0.62 * rx + g, c: 0.62 * rz + g, k: 0.4 * rx, cz: hz };
-    octBand(b, s0, s1, col);
-    octBand(b, s1, s2, col, { top: col });
+    ellipsoid(b, 0, cy + .18 * ry, hz, rx + g, ry * .92, rz + g, col, { seg: 12, rings: 8, ringTo: 4, phase: 0, smooth: true });
     if (!hat) {
       // fringe over the forehead
-      taperBox(b, cy + 0.3 * ry, cy + 0.55 * ry, { x0: -rx * 0.8, x1: rx * 0.8, z0: hz + rz + g - 0.2, z1: hz + rz + g + 0.08 }, { x0: -rx * 0.85, x1: rx * 0.85, z0: hz + rz + g - 0.2, z1: hz + rz + g + 0.08 }, c2);
+      for (let i = -2; i <= 2; i++) {
+        const xx = i * rx * .32, yy = cy + ry * (.24 + Math.abs(i) * .06), zz = hz + rz * Math.sqrt(1 - (xx / (rx + g)) ** 2) + .06;
+        b.tri([xx - rx * .22, cy + ry * .58, zz - .13], [xx + rx * .22, cy + ry * .58, zz - .13], [xx + rx * .12, yy, zz], i % 2 ? c2 : col, [0, 0, 1]);
+      }
     }
   }
   const drape = (yLow: number, zBack: number, widen: number, taper = 0.85): void => {
-    taperBox(
-      b,
-      yLow,
-      cy + 0.5 * ry,
-      { x0: -(rx + g + widen) * taper, x1: (rx + g + widen) * taper, z0: hz - rz - g - zBack, z1: hz + 0.1 * rz },
-      { x0: -(rx + g + widen), x1: rx + g + widen, z0: hz - rz - g - zBack * 0.4, z1: hz + 0.1 * rz },
-      col,
-      { top: col, back: shadeRGB(col, 0.88) },
-    );
+    const high = cy + .65 * ry;
+    ellipsoid(b, 0, (high + yLow) / 2, hz - rz * .12, (rx + g + widen) * (1 + taper) / 2, (high - yLow) / 2, rz + g + zBack * .55, col, { seg: 12, rings: 8, segFrom: 3, segTo: 9, phase: 0, smooth: true });
   };
   switch (style) {
     case 'short':
@@ -186,11 +171,11 @@ function buildHair(b: MeshBatch, h: HeadFrame, style: HairStyle, col: RGB, hat: 
       break;
     case 'bob':
       drape(cy - 0.62 * ry, 0.35, 0.18);
-      for (const sd of [-1, 1]) boxC(b, sd * (rx + g + 0.1), cy - 0.1 * ry, hz + 0.2, 0.28, 0.7 * ry, 0.55, col);
+      for (const sd of [-1, 1]) ellipsoid(b, sd * (rx + .02), cy - .1 * ry, hz, .3, .7 * ry, .55, col, { seg: 6, rings: 6, smooth: true });
       break;
     case 'long':
       drape(shoulderY - 2.4, 0.6, 0.2);
-      for (const sd of [-1, 1]) boxC(b, sd * (rx + g + 0.12), (cy + 0.3 * ry + shoulderY - 1.8) / 2, hz + 0.1, 0.3, (cy + 0.3 * ry - shoulderY + 1.8) / 2, 0.55, col);
+      for (const sd of [-1, 1]) ellipsoid(b, sd * (rx + .03), (cy + .3 * ry + shoulderY - 1.8) / 2, hz, .3, (cy + .3 * ry - shoulderY + 1.8) / 2, .55, col, { seg: 6, rings: 6, smooth: true });
       break;
     case 'pony':
       drape(cy - 0.25 * ry, 0.2, 0.0);
@@ -202,13 +187,19 @@ function buildHair(b: MeshBatch, h: HeadFrame, style: HairStyle, col: RGB, hat: 
       ellipsoid(b, 0, cy + 0.85 * ry, hz - rz * 0.55, 0.95, 0.8, 0.95, col, { seg: 6, rings: 3, jitter: 0.05 });
       break;
     case 'perm':
-      drape(cy - 0.45 * ry, 0.5, 0.45, 0.9);
-      for (const sd of [-1, 1]) boxC(b, sd * (rx + g + 0.35), cy + 0.0 * ry, hz + 0.1, 0.45, 0.55 * ry, 0.9, col);
-      boxC(b, 0, cy + ry + 0.15, hz - 0.1, rx * 0.8, 0.35, rz * 0.85, c2);
+      drape(cy - 0.45 * ry, 0.4, 0.25, 0.9);
+      for (const sd of [-1, 1]) ellipsoid(b, sd * (rx + .05), cy, hz, .4, .6 * ry, .8, col, { seg: 8, rings: 6, smooth: true });
+      for (let i = -1; i <= 1; i++) ellipsoid(b, i * rx * .6, cy + ry * .9, hz - .1, rx * .55, .55, rz * .8, i === 0 ? c2 : col, { seg: 8, rings: 6, smooth: true });
       break;
     default:
       break;
   }
+}
+
+/** Shared original facial geometry for residents and the public player. */
+export function buildPortrait(b: MeshBatch, frame: HeadFrame, skin: RGB, hair: Outfit['hair'], shoulderY: number, hat = false): void {
+  buildHead(b, frame, skin);
+  buildHair(b, frame, hair.style, hair.color, hat, shoulderY);
 }
 
 function buildHat(b: MeshBatch, h: HeadFrame, hat: NonNullable<Outfit['hat']>): void {
@@ -352,12 +343,11 @@ function buildTorso(b: MeshBatch, d: Dims, o: Outfit, hipY: number, seated: bool
   octBand(b, s0, s1, lowerCol, { bottom: lowerCol });
   octBand(b, s1, s2, top.color);
   octBand(b, s2, s3, top.color);
-  octBand(b, s3, s4, top.color);
+  octBand(b, s3, s4, top.color, { top: top.color });
   const neckTop = shoulderY + d.neckLen;
   octBand(b, { y: shoulderY + 0.3, a: d.neckR, c: d.neckR, k: d.neckR * 0.35, cz: lean(shoulderY) }, { y: neckTop + 0.15, a: d.neckR * 0.95, c: d.neckR * 0.95, k: d.neckR * 0.35, cz: lean(shoulderY) + 0.3 }, shadeRGB(o.skin, 0.92));
   const head: HeadFrame = { cy: neckTop + d.headRy * 0.8, hz: lean(shoulderY) + 0.35 + stoop * 0.6, rx: d.headRx, ry: d.headRy, rz: d.headRz };
-  buildHead(b, head, o.skin);
-  buildHair(b, head, o.hair.style, o.hair.color, o.hat !== undefined, shoulderY);
+  buildPortrait(b, head, o.skin, o.hair, shoulderY, o.hat !== undefined);
   if (o.hat) buildHat(b, head, o.hat);
 
   const secs = [s1, s2, s3];

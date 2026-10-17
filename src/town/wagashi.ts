@@ -1,7 +1,9 @@
+import { HeightPass, SHOP_HEIGHT_SCALE } from './height-pass';
 import type { Ctx } from './ctx';
 import type { Frame } from './frame';
 import { Kit, slice } from './kit';
 import { hex, shade, type Rect } from './util';
+import { ellipsoid } from '../life/geom';
 
 // ---------------------------------------------------------------------------------------------------------------------
 // 和菓子屋: a traditional wooden shopfront (ref1)
@@ -19,6 +21,7 @@ const RED_CLOTH = hex(0xb8322a);
 const PAPER = hex(0xf6ecd2);
 
 export function addWagashi(c: Ctx, rect: Rect, f: Frame, W: number, D: number): void {
+  const heightPass = new HeightPass(c);
   const k = new Kit(c, f);
   const P = 3.5; // plinth top (outside floor level)
   const FL = 4; // interior floor level
@@ -58,13 +61,17 @@ export function addWagashi(c: Ctx, rect: Rect, f: Frame, W: number, D: number): 
     k.box(a, b, 26, 27.6, D - 5, D - 0.4, WOOD_DARK); // transom
     for (let i = 1; i < n; i++) k.box(a + pw * i - 0.9, a + pw * i + 0.9, yw0, yw1, D - 5, D - 0.4, WOOD_DARK); // mullions
     k.pane(a, b, yw0, yw1, D - 2.8);
-    // short noren (半暖簾) hanging inside the top of the window
-    const np = Math.floor((b - a) / 8.6);
-    for (let i = 0; i < np; i++) {
-      const u = a + 3 + i * ((b - a - 6) / Math.max(1, np - 1));
-      k.tf(slice(k.uv('noren:wagashi'), (i % 3) / 3, (i % 3 + 1) / 3), u - 3, u + 3, 21.5, 33, D - 6, 1);
-    }
+    // Keep the display bays clear; the three door curtains retain the shop identity.
     k.ibox(a + 1, b - 1, 33, 33.9, D - 6.4, D - 5.6, WOOD_DARK, 'TF');
+  }
+  // Narrow timber boards beneath the display bays stay clear of the glass and entrance.
+  for (const [a, b] of bays) {
+    for (let u = a; u < b - .1; u += 2.8) {
+      const end = Math.min(b, u + 2.65);
+      const wood = shade(WOOD_MID, .94 + .05 * Math.sin(u * 1.7));
+      k.box(u, end, P + .4, yw0 - 1.5, D + .04, D + .45, wood);
+    }
+    k.box(a - .3, b + .3, P, P + .65, D, D + .8, WOOD_DARK);
   }
   // sliding glass door
   k.pane(doorC - 11, doorC + 11, FL, yw1, D - 2.8);
@@ -88,15 +95,16 @@ export function addWagashi(c: Ctx, rect: Rect, f: Frame, W: number, D: number): 
   k.ifa(-62, 62, sy0 + 0.9, sy0 + 1.7, D + 2.65, 1, PAPER);
   // the plaque hangs from the left door post, turned to face along the street
   const pq = -18;
-  k.box(pq - 0.6, pq + 0.6, 22.2, 23.4, D + 1.2, D + 14.8, WOOD_DARK);
-  k.box(pq - 0.3, pq + 0.3, 18.2, 22.2, D + 2.4, D + 14.4, WOOD_DARK);
-  k.ts(k.uv('営業中'), D + 2.4, D + 14.4, 18.2, 22.2, pq + 0.4, 1);
-  k.ts(k.uv('営業中'), D + 2.4, D + 14.4, 18.2, 22.2, pq - 0.4, -1);
+  // A small plaque above head height, close to the post rather than across the pedestrian's face.
+  k.box(pq - .22, pq + .22, 29, 29.5, D + 1.2, D + 7.2, WOOD_DARK);
+  k.box(pq - .15, pq + .15, 27, 29, D + 2, D + 6.8, WOOD_DARK);
+  k.ts(k.uv('営業中'), D + 2, D + 6.8, 27, 29, pq + .18, 1);
+  k.ts(k.uv('営業中'), D + 2, D + 6.8, 27, 29, pq - .18, -1);
   // noren over the door
   const nuv = k.uv('noren:wagashi');
   for (let i = 0; i < 3; i++) {
     const u = doorC - 7.7 + i * 7.7;
-    k.tf(slice(nuv, (2 - i) / 3, (3 - i) / 3), u - 3.6, u + 3.6, 17.5, 32.4, D + 1.2, 1);
+    k.clothFront(slice(nuv, (2 - i) / 3, (3 - i) / 3), u - 3.6, u + 3.6, 17.5, 32.4, D + 1.2, 1);
   }
   k.box(doorC - 12.5, doorC + 12.5, 32.4, 33.2, D + 0.8, D + 1.7, WOOD_DARK);
 
@@ -144,6 +152,18 @@ export function addWagashi(c: Ctx, rect: Rect, f: Frame, W: number, D: number): 
     k.quad([-W - 9, ya + 0.12, va], [W + 9, ya + 0.12, va], [W + 9, yb + 0.12, vb], [-W - 9, yb + 0.12, vb], hex(0x2a2f3a), [0, D + 6, 27]);
   }
 
+  // Eave gutter and downpipes stand against the plaster, clear of the signs.
+  const zinc = hex(0x727b7d);
+  k.box(-eu, eu, yOut - .5, yOut + .4, eOut - .6, eOut + .6, zinc);
+  for (const side of [-1, 1]) {
+    const u = side * (W - 1.4);
+    k.cyl(u, D + 1.8, .8, yOut - 1.4, .42, .42, 6, zinc, false);
+    k.box(u - .42, u + .42, yOut - 1.8, yOut - .95, D + 1.4, eOut + .4, zinc);
+    for (const y of [12, 31, 49]) k.box(u - .8, u + .8, y, y + .45, D + 1, D + 2.5, shade(zinc, .8));
+  }
+
+  heightPass.applyAbove(FL, SHOP_HEIGHT_SCALE);
+
   // ---- the room behind the glass ----------------------------------------------------------------------------------
   const rb = -D + 22; // back wall of the sales room
   const rU = W - 2.5;
@@ -165,19 +185,31 @@ export function addWagashi(c: Ctx, rect: Rect, f: Frame, W: number, D: number): 
     k.ibox(u - 0.15, u + 0.15, cl - 8, cl, 8, 8.3, hex(0x3a2a20)); // paper lanterns
     k.iblob(u, cl - 11, 8, 3.4, 4.4, 3.4, [1.5, 1.34, 1.04], 0.02, u);
   }
+  heightPass.applyAbove(FL, SHOP_HEIGHT_SCALE);
+
   // counter with the glass case
   k.ibox(-52, 30, FL, 14, -26, -14, hex(0x4a2f1e));
   k.tf(k.uv('case:wagashi'), -52, 30, 14.2, 23, -14.1, 1);
   k.ibox(-52, 30, 23, 24, -26, -14, hex(0x4a2f1e), 'T');
   // window display: red tiers behind the right bay, rising towards the back
-  const tiers = [{ v0: 50, y: 6.2 }, { v0: 44, y: 9.6 }, { v0: 38, y: 13 }];
-  for (const t of tiers) k.ibox(31, 64, FL, t.y, t.v0, t.v0 + 6, hex(0x9a2a24), 'TFLR');
+  // All three display levels sit above the ten-unit window sill.
+  const tiers = [{ v0: 50, y: 11.2 }, { v0: 44, y: 14.6 }, { v0: 38, y: 18 }];
   const pastel = [hex(0xf4a9c0), hex(0xf7f1e2), hex(0xa7cc82), hex(0xf1d172), hex(0xc4a8dc), hex(0xf4a9c0)];
-  for (let i = 0; i < 6; i++) {
-    const u = 35 + i * 5.2;
-    k.ibox(u - 2.2, u + 2.2, 6.2, 8.6, 51.5, 55, pastel[i]!);
-    k.ibox(u - 2.2, u + 2.2, 9.6, 12, 45.5, 49, pastel[(i + 2) % 6]!);
-    k.ibox(u - 2.2, u + 2.2, 13, 15.4, 39.5, 43, pastel[(i + 4) % 6]!);
+  for (const [row, t] of tiers.entries()) {
+    k.ibox(31, 64, FL, t.y, t.v0, t.v0 + 6, hex(0x9a2a24), 'TFLR');
+    for (let i = 0; i < 6; i++) {
+      const u = 35 + i * 5.2, v = t.v0 + 3, y = t.y + .25;
+      k.ibox(u - 2.1, u + 2.1, t.y, y, v - 1.8, v + 1.8, hex(0xeee2c8));
+      if (i % 3 === 0) {
+        for (const side of [-1, 1]) k.iball(u + side * .9, y + .7, v, .8, .7, .8, pastel[(i + row) % pastel.length]!);
+      } else if (i % 3 === 1) {
+        k.ibox(u - .07, u + .07, y + .45, y + .58, v - 1.9, v + 1.9, hex(0xbc9764));
+        for (let sweet = 0; sweet < 3; sweet++) k.iball(u, y + .65, v + (sweet - 1) * .95, .55, .55, .55, pastel[sweet]!);
+      } else {
+        k.ibox(u - 1.6, u + 1.6, y, y + 1.8, v - 1.4, v + 1.4, pastel[(i + row) % pastel.length]!);
+        k.ibox(u - .18, u + .18, y + 1.8, y + 1.9, v - 1.4, v + 1.4, hex(0xfcf6e9), 'TFLR');
+      }
+    }
   }
   // shelving and a low case near the right window, their faces turned towards the street so they show through the glass
   k.ibox(24, 27.4, FL, 41, 30, 58, hex(0x5a3a26), 'TFKLR');
@@ -219,11 +251,24 @@ export function addWagashi(c: Ctx, rect: Rect, f: Frame, W: number, D: number): 
   const cv = D + 3.4;
   const white: [number, number, number] = [0.97, 0.95, 0.9];
   k.box(cu - 2.4, cu + 2.4, 0, 3.4, cv - 2.2, cv + 2.2, STONE);
-  k.blob(cu, 6.2, cv, 2.1, 2.6, 2, white, 0.03, 3);
-  k.blob(cu, 9.4, cv, 1.8, 1.7, 1.7, white, 0.03, 5);
+  const porcelain = (u: number, y: number, v: number, radius: number, tall: number): void => {
+    const p = f.pt(u, y, v);
+    ellipsoid(k.m, p[0], p[1], p[2], radius, tall, radius, white, { seg: 12, rings: 8, smooth: true });
+  };
+  porcelain(cu, 6.2, cv, 2.1, 2.6);
+  porcelain(cu, 9.4, cv, 1.85, 1.7);
   k.cyl(cu - 1, cv, 10.4, 11.8, 0.8, 0, 4, white, false);
   k.cyl(cu + 1, cv, 10.4, 11.8, 0.8, 0, 4, white, false);
-  k.box(cu + 1.6, cu + 2.5, 6.4, 10.4, cv + 0.4, cv + 1.3, white);
+  porcelain(cu + 2, 8.7, cv + .6, .7, 1.9);
+  // A slight turn towards the passing pedestrian makes the face legible from the shopfront.
+  const face = (u: number, y: number, v: number): [number, number, number] => [cu + u * .866 + v * .5, y, cv - u * .5 + v * .866];
+  const mark = (u: number, y: number, v: number, w: number, h: number, color: readonly [number, number, number]): void => {
+    k.quad(face(u - w / 2, y - h / 2, v), face(u + w / 2, y - h / 2, v), face(u + w / 2, y + h / 2, v), face(u - w / 2, y + h / 2, v), color, [.5, 0, .866]);
+  };
+  for (const eye of [-.65, .65]) mark(eye, 9.55, 1.79, .4, .2, hex(0x453536));
+  mark(0, 9.14, 1.91, .23, .18, hex(0xc95767));
+  mark(0, 8.92, 1.84, .12, .25, hex(0x453536));
+  for (const cheek of [-1.28, 1.28]) mark(cheek, 9.06, 1.44, .4, .22, hex(0xe7a2a1));
   k.box(cu - 1.8, cu + 1.8, 7.6, 8.2, cv + 1.4, cv + 1.8, RED_CLOTH);
   k.blob(cu, 7.5, cv + 1.9, 0.55, 0.55, 0.35, hex(0xe8c040), 0, 7);
   k.box(cu - 1, cu + 1, 4.6, 5.9, cv + 1.7, cv + 2.1, hex(0xe8c040));
@@ -232,9 +277,9 @@ export function addWagashi(c: Ctx, rect: Rect, f: Frame, W: number, D: number): 
   const pv = D + 5;
   k.cyl(pu, pv, 0, 7.2, 3.6, 4.6, 8, hex(0x4a5d6e));
   k.cyl(pu, pv, 7.2, 8.2, 4.1, 4.1, 8, hex(0x34240f));
-  k.blob(pu, 12, pv, 5.2, 4.8, 5.2, hex(0x4f9a44), 0.12, 11);
-  k.blob(pu + 2.5, 16, pv - 1, 3.8, 3.6, 3.8, hex(0x63ad4e), 0.12, 12);
-  k.blob(pu - 2.5, 15, pv + 1, 3.4, 3.4, 3.4, hex(0x42893d), 0.12, 13);
+  k.topiary(pu, 12, pv, 5.2, 4.8, 5.2, hex(0x4f9a44));
+  k.topiary(pu + 2.5, 16, pv - 1, 3.8, 3.6, 3.8, hex(0x63ad4e));
+  k.topiary(pu - 2.5, 15, pv + 1, 3.4, 3.4, 3.4, hex(0x42893d));
   // red paper lanterns under the eave
   for (const u of [-W + 14, doorC - 18, doorC + 24]) {
     k.box(u - 0.2, u + 0.2, 53, 56.8, D + 8, D + 8.4, WOOD_DARK);

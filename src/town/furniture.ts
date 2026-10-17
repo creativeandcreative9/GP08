@@ -10,7 +10,9 @@ import { avenueTrees, poleList } from './props';
 import { Fx } from './shapes';
 import { insideAny, plazaW, railDistance, roadClearance, roadsW, stationRect, type RoadW } from './site';
 import { BEACH_WIDTH, coastS, heightAt, mountainHeight } from './terrain';
-import { hex, type Rect } from './util';
+import { hex, makeRng, type Rect } from './util';
+import { SURF } from '../surface';
+import { addCherry } from './trees';
 
 /**
  * Street furniture (ストリートファニチャー): everything people stand next to on the pavement. Placement works on the
@@ -180,7 +182,7 @@ class Builder {
   /** Points along the lines of sight of the comparison cameras that tall pieces keep clear of. */
   private readonly corridor: { x: number; z: number }[] = [];
 
-  constructor(readonly c: Ctx) {
+  constructor(readonly c: Ctx, private readonly corridorPadding = 9, private readonly excluded?: (x: number, z: number, radius: number) => boolean) {
     this.infos = roadsW.map((road) => {
       const smp = samplePolyline(road.pts, 10);
       return { road, smp, total: smp[smp.length - 1]!.s };
@@ -217,9 +219,9 @@ class Builder {
 
   /** Counts a piece and the vertices its builder spent. */
   record(kind: string, x: number, z: number, build: () => void): void {
-    const before = this.c.main.vertexCount + this.c.signs.vertexCount;
+    const before = this.c.main.vertexCount + this.c.signs.vertexCount + (this.c.cloth?.batches.vertexCount ?? 0);
     build();
-    const after = this.c.main.vertexCount + this.c.signs.vertexCount;
+    const after = this.c.main.vertexCount + this.c.signs.vertexCount + (this.c.cloth?.batches.vertexCount ?? 0);
     this.counts[kind] = (this.counts[kind] ?? 0) + 1;
     this.verts[kind] = (this.verts[kind] ?? 0) + (after - before);
     this.items.push({ kind, x, z });
@@ -228,11 +230,12 @@ class Builder {
   /** Is there room for a piece of radius r at (x,z)? */
   roomFor(x: number, z: number, r: number, o: RoomOpts = {}): boolean {
     if (!groundOk(x, z)) return false;
+    if (this.excluded?.(x, z, r)) return false;
     if (inPlaza(x, z, 10)) return false;
     if (roadClearance(x, z, o.road).d < (o.roadMargin ?? 17)) return false;
     if (o.ownMargin !== undefined && roadClearance(x, z).d < o.ownMargin) return false;
     if (insideAny(x, z, this.c.obstacles, o.wall ?? r + 1)) return false;
-    if (this.corridor.some((q) => Math.hypot(q.x - x, q.z - z) < (o.tall ? 14 : 9) + r)) return false; // keep the comparison shots clear
+    if (this.corridor.some((q) => Math.hypot(q.x - x, q.z - z) < this.corridorPadding + (o.tall ? 5 : 0) + r)) return false; // keep the comparison shots clear
     return !this.taken.hit(x, z, r);
   }
 
@@ -1034,5 +1037,90 @@ export function buildFurniture(c: Ctx): FurnitureStats {
   stripClutter(B);
   const total = Object.values(B.verts).reduce((a, b) => a + b, 0);
   c.report.push(`street furniture: ${Object.entries(B.counts).map(([k, n]) => `${k} ${n}`).join(', ')} (${total} vertices)`);
+  return { counts: B.counts, verts: B.verts, items: B.items };
+}
+
+
+/** Fill a few quiet frontage gaps after all original builders, using a separate random stream. */
+export function addNeighbourhoodDetails(c: Ctx, existing: FurnitureStats): FurnitureStats {
+  const B = new Builder({ ...c, rnd: makeRng(20261017) }, 1, (x, z, radius) => !clearDoor(x, z, radius));
+  for (const item of existing.items) B.taken.add(item.x, item.z, 14);
+  const centres = [plazaW, ...['e-wagashi', 'w-cafe', 'w-conbini'].map(id => c.spots[id]).filter(Boolean)];
+  const doors = Object.values(c.spots);
+  const clearDoor = (x: number, z: number, radius = 0): boolean => {
+    if (c.home && Math.hypot(x - c.home.x, z - c.home.z) < 32 + radius) return false;
+    return !doors.some(s => {
+      const dx = x - s.x, dz = z - s.z, u = dx * s.fz - dz * s.fx, v = dx * s.fx + dz * s.fz;
+      return Math.abs(u) < 27 + radius && v > s.hv - 6 - radius && v < s.hv + 80 + radius;
+    });
+  };
+  const buckets = B.infos.map(info => {
+    const anchors: (Anchor & { distance: number })[] = [];
+    for (const side of [-1, 1] as const) for (let s = 80; s < info.total - 40; s += 64) {
+      const e = edge(info, s, side, 18.8), distance = Math.min(...centres.map(p => Math.hypot(e.x - p.x, e.z - p.z)));
+      if (distance > 1000 || !clearDoor(e.x, e.z)) continue;
+      anchors.push({ x: e.x, z: e.z, fx: -e.ox, fz: -e.oz, distance,
+        opts: { road: info.road.id, roadMargin: 17, ownMargin: 17, wall: 6 } });
+    }
+    return anchors.sort((a, b) => a.distance - b.distance);
+  });
+  const vertexCount = (): number => c.main.vertexCount + c.signs.vertexCount + (c.foliage?.vertexCount ?? 0) + (c.topiary?.vertexCount ?? 0);
+  const first = vertexCount(); let groups = 0;
+  const defaults = c.main.all().map(([, batch]) => ({ batch, surface: batch.surface, axis: batch.axis }));
+  for (const { batch } of defaults) { batch.surface = SURF.plain; batch.axis = 0; }
+  try {
+  // Round robin keeps the additions spread across streets instead of filling only the first road.
+  for (let round = 0; round < 4 && groups < 24 && vertexCount() - first < 12000; round++) {
+    for (let road = 0; road < buckets.length && groups < 24 && vertexCount() - first < 12000; road++) {
+      const anchors = buckets[road]!;
+      while (anchors.length) {
+        const a = anchors.shift()!, before = B.items.length;
+        const kind = (road + round) % 3;
+        if (kind === 0) potRun(B, a, 2);
+        else if (kind === 1) bikeRun(B, a, 1);
+        else planterRun(B, a);
+        if (B.items.length > before) { groups++; break; }
+      }
+    }
+  }
+  // A pair of garden cherries gives the shopping streets a spring canopy too.
+  const shopFronts = ['e-wagashi', 'w-conbini', 'w-cafe'].map(id => c.spots[id]).filter(Boolean)
+    .map(s => ({ x: s.x + s.fx * s.hv, z: s.z + s.fz * s.hv }));
+  let cherries = 0, post = 0;
+  const added: { x: number; z: number }[] = [];
+  for (const shop of shopFronts) {
+    if (cherries >= 2 || vertexCount() - first > 10000) break;
+    const road = roadClearance(shop.x, shop.z).road;
+    const info = B.infos.find(info => info.road.id === road?.id);
+    if (!info || info.road.id === 'mountain-street' || info.road.id === 'coast-road') continue;
+    const candidates: (Edge & { distance: number })[] = [];
+    for (const side of [-1, 1] as const) for (let s = 80; s < info.total - 40; s += 96) {
+      const e = edge(info, s, side, 22), distance = Math.hypot(e.x - shop.x, e.z - shop.z);
+      if (distance >= 130 && distance <= 550) candidates.push({ ...e, distance });
+    }
+    for (const e of candidates.sort((a, b) => a.distance - b.distance)) {
+      if (added.some(t => Math.hypot(t.x - e.x, t.z - e.z) < 140)) continue;
+      if (!B.roomFor(e.x, e.z, 7, { road: info.road.id, ownMargin: 19, roadMargin: 18, wall: 8 })) continue;
+      B.record('cherry', e.x, e.z, () => addCherry(B.c, e.x, e.z, .82));
+      B.taken.add(e.x, e.z, 9); added.push(e); cherries++; break;
+    }
+  }
+  // A single residential postal point, outside the walking strip on the cherry avenue.
+  const avenue = B.infos.find(info => info.road.id === 'mountain-street');
+  if (avenue) for (const side of [1, -1] as const) {
+    for (let s = 560; s <= Math.min(900, avenue.total - 40); s += 80) {
+      const e = edge(avenue, s, side, 38.8);
+      if (avenueTrees.some(tree => Math.hypot(tree.x - e.x, tree.z - e.z) < 23)) continue;
+      if (!B.roomFor(e.x, e.z, 4, { road: avenue.road.id, ownMargin: 17, roadMargin: 17, wall: 5, tall: true })) continue;
+      B.record('post', e.x, e.z, () => postBox(B.c, frame(e.x, e.z, -e.ox - e.tx * .7, -e.oz - e.tz * .7)));
+      B.taken.add(e.x, e.z, 5); post++; break;
+    }
+    if (post) break;
+  }
+  c.report.push(`shopping street trees: ${cherries}, avenue postal points: ${post}`);
+  } finally {
+    for (const { batch, surface, axis } of defaults) { batch.surface = surface; batch.axis = axis; }
+  }
+  c.report.push(`neighbourhood details: ${groups} small groups, ${B.items.length} objects, ${vertexCount() - first} vertices; original layout/random stream retained`);
   return { counts: B.counts, verts: B.verts, items: B.items };
 }

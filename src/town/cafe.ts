@@ -1,3 +1,4 @@
+import { HeightPass, SHOP_HEIGHT_SCALE } from './height-pass';
 import type { Ctx } from './ctx';
 import type { Frame } from './frame';
 import { Kit } from './kit';
@@ -11,7 +12,7 @@ const WOOD_LIGHT = hex(0xcb9c64);
 const BRICK = hex(0xa4513a);
 const ROOF = hex(0x8b4637);
 const RED = hex(0xc8281e);
-const STRIPE_WHITE = hex(0xfbf6ea);
+const AWNING = hex(0x8b3445);
 const SHUTTER = hex(0x587c5c);
 const TERRACOTTA = hex(0xc0683f);
 const FLOWERS: RGB[] = [hex(0xf29bb8), hex(0xf6d94a), hex(0xfaf6ee), hex(0xe9604f), hex(0xb89ae0), hex(0xf29bb8)];
@@ -26,22 +27,38 @@ function chair(k: Kit, u: number, v: number, y: number, towards: 1 | -1): void {
   for (const dv of [-2.2, 2.2]) for (const du of [-2.2, 2.2]) k.box(u + du - 0.4, u + du + 0.4, y, y + 5, v + dv - 0.4, v + dv + 0.4, WOOD);
 }
 
+/** Original ceramic cup, open coffee surface, saucer and a handle with a real opening. */
+function coffeeCup(k: Kit, u: number, v: number, y: number, inside = false): void {
+  const cyl = inside ? k.icyl.bind(k) : k.cyl.bind(k);
+  const box = inside ? k.ibox.bind(k) : k.box.bind(k);
+  const ceramic = hex(0xf4ecdc);
+  cyl(u, v, y, y + .18, 1.15, 1.15, 10, ceramic);
+  cyl(u, v, y + .18, y + 1.65, .58, .75, 10, ceramic, false);
+  cyl(u, v, y + 1.55, y + 1.68, .75, .75, 10, ceramic);
+  cyl(u, v, y + 1.69, y + 1.71, .63, .63, 10, hex(0x593326));
+  box(u + .62, u + 1.24, y + .4, y + .6, v - .13, v + .13, ceramic);
+  box(u + .62, u + 1.24, y + 1.24, y + 1.44, v - .13, v + .13, ceramic);
+  box(u + 1.08, u + 1.28, y + .5, y + 1.34, v - .13, v + .13, ceramic);
+}
+
 function table(k: Kit, u: number, v: number, y: number, seed: number): void {
   k.cyl(u, v, y + 8.4, y + 9.2, 5.6, 5.6, 10, WOOD_LIGHT);
   k.cyl(u, v, y, y + 8.4, 0.7, 0.7, 5, WOOD_DARK);
   k.cyl(u, v, y, y + 0.8, 2.6, 2.6, 8, WOOD_DARK);
   k.cyl(u + 1, v, y + 9.2, y + 11.2, 0.55, 0.4, 5, hex(0xe8e3d6)); // little vase
   k.blob(u + 1, y + 12, v, 1.2, 1, 1.2, FLOWERS[seed % FLOWERS.length]!, 0.1, seed);
+  coffeeCup(k, u - 2, v + .6, y + 9.2);
   chair(k, u, v + 8.4, y, -1);
   chair(k, u, v - 8.4, y, 1);
 }
 
 function pot(k: Kit, u: number, v: number, y: number, h: number, leaf: RGB): void {
   k.cyl(u, v, y, y + h, h * 0.42, h * 0.55, 8, TERRACOTTA);
-  k.blob(u, y + h + 2.5, v, h * 0.62, h * 0.5, h * 0.62, leaf, 0.12, u + v);
+  k.topiary(u, y + h + 2.5, v, h * 0.62, h * 0.5, h * 0.62, leaf);
 }
 
 export function addCafe(c: Ctx, rect: Rect, f: Frame, W: number, D: number): void {
+  const heightPass = new HeightPass(c);
   const k = new Kit(c, f);
   const P = 6; // deck and floor level
   const FL = 6.2;
@@ -75,7 +92,7 @@ export function addCafe(c: Ctx, rect: Rect, f: Frame, W: number, D: number): voi
     // flower box under the window
     k.box(a + 1, b - 1, 8.6, 12, D + 0.4, D + 4.6, WOOD_DARK);
     const nb = Math.round((b - a) / 9);
-    for (let i = 0; i < nb; i++) k.blob(a + 5 + (i * (b - a - 10)) / Math.max(1, nb - 1), 13.2, D + 2.5, 2.8, 2.2, 2.6, FLOWERS[(i + (a > 0 ? 0 : 2)) % FLOWERS.length]!, 0.1, i + a);
+    for (let i = 0; i < nb; i++) k.plant(a + 5 + (i * (b - a - 10)) / Math.max(1, nb - 1), 11.1, D + 2.5, 4.4, i % 2 ? 'bedPansy' : 'bedCosmos');
   }
   // door
   k.pane(doorC - 9, doorC + 9, 17, 37.5, D - 2.6);
@@ -99,7 +116,7 @@ export function addCafe(c: Ctx, rect: Rect, f: Frame, W: number, D: number): voi
       for (let y = 64; y < 80; y += 3.2) k.fa(Math.min(a, a + s * 5.6) + 0.5, Math.max(a, a + s * 5.6) - 0.5, y, y + 0.9, D - 0.5, 1, shade(SHUTTER, 0.68));
     }
     k.box(u - 8, u + 8, 57.5, 61, D + 0.5, D + 4.4, WOOD_DARK);
-    for (let i = 0; i < 4; i++) k.blob(u - 6 + i * 4, 62, D + 2.4, 2.2, 1.8, 2.2, FLOWERS[(i + 1) % FLOWERS.length]!, 0.1, i + u);
+    for (let i = 0; i < 4; i++) k.plant(u - 6 + i * 4, 60.2, D + 2.4, 3.6, i % 2 ? 'bedPansy' : 'bedNemo');
   }
 
   // windows on both side walls (the sides show from the street at an angle)
@@ -130,19 +147,31 @@ export function addCafe(c: Ctx, rect: Rect, f: Frame, W: number, D: number): voi
   k.box(W - 26, W - 19, UF + 8, UF + 34, -D + 14, -D + 21, BRICK); // chimney
   k.box(W - 27, W - 18, UF + 34, UF + 36, -D + 13, -D + 22, hex(0x6a3a2c));
 
-  // ---- the awning (red and white stripes) --------------------------------------------------------------------------
+  // ---- curved burgundy cloth and scalloped valance (reference cafe) ------------------------------------------------
   const aOut = 26;
   const stripes = Math.round((2 * W) / 11);
   const sw = (2 * W) / stripes;
   for (let i = 0; i < stripes; i++) {
     const u0 = -W + i * sw;
     const u1 = u0 + sw;
-    const col = i % 2 ? STRIPE_WHITE : RED;
-    k.quad([u0, 46, D + 0.8], [u1, 46, D + 0.8], [u1, 38, D + aOut], [u0, 38, D + aOut], col, [0, aOut, 8]);
-    k.quad([u0, 38, D + aOut], [u1, 38, D + aOut], [u1, 31.5, D + aOut + 0.4], [u0, 31.5, D + aOut + 0.4], col, [0, 0, 1]);
+    const col = shade(AWNING, i % 2 ? .96 : 1.04);
+    for (let j = 0; j < 3; j++) {
+      const t0 = j / 3, t1 = (j + 1) / 3;
+      const ya = 46 - 8 * t0 - Math.sin(t0 * Math.PI) * 1.2, yb = 46 - 8 * t1 - Math.sin(t1 * Math.PI) * 1.2;
+      const va = D + .8 + t0 * (aOut - .8), vb = D + .8 + t1 * (aOut - .8);
+      k.quad([u0, ya, va], [u1, ya, va], [u1, yb, vb], [u0, yb, vb], col, [0, aOut, 8]);
+    }
+    k.quad([u0, 38, D + aOut], [u1, 38, D + aOut], [u1, 34.5, D + aOut + .4], [u0, 34.5, D + aOut + .4], col, [0, 0, 1]);
+    const mid = (u0 + u1) / 2;
+    for (let j = 0; j < 4; j++) {
+      const ua = u0 + sw * j / 4, ub = u0 + sw * (j + 1) / 4;
+      const bottom = (u: number): number => 34.5 - Math.sqrt(Math.max(0, 1 - ((u - mid) / (sw / 2)) ** 2)) * 1.7;
+      k.quad([ua, 34.5, D + aOut + .4], [ub, 34.5, D + aOut + .4], [ub, bottom(ub), D + aOut + .4], [ua, bottom(ua), D + aOut + .4], col, [0, 0, 1]);
+    }
     k.quad([u0, 45.2, D + 0.8], [u0, 37.2, D + aOut], [u1, 37.2, D + aOut], [u1, 45.2, D + 0.8], shade(col, 0.72), [0, -1, 0]);
   }
-  for (const u of [-W + 1.2, W - 1.2]) k.quad([u - 0.3, 46, D + 0.8], [u - 0.3, 38, D + aOut], [u - 0.3, 31.5, D + aOut + 0.4], [u - 0.3, 45, D + 0.8], shade(RED, 0.8), [u, 0, 0]);
+  k.tf(k.uv('awning:cafe'), -W * .52, W * .52, 34.6, 37.8, D + aOut + .44, 1);
+  for (const u of [-W + 1.2, W - 1.2]) k.quad([u - 0.3, 46, D + 0.8], [u - 0.3, 38, D + aOut], [u - 0.3, 33.5, D + aOut + 0.4], [u - 0.3, 45, D + 0.8], shade(AWNING, 0.8), [u, 0, 0]);
 
   // ---- the sign, and a hanging board ------------------------------------------------------------------------------
   k.box(-32, 32, 48, 62, D + 0.5, D + 2.3, WOOD_DARK);
@@ -154,6 +183,8 @@ export function addCafe(c: Ctx, rect: Rect, f: Frame, W: number, D: number): voi
   k.ts(k.uv('v:カフェ'), D + 3.4, D + 10.2, 29.3, 52.7, bladeU + 1.2, 1);
   k.ts(k.uv('v:カフェ'), D + 3.4, D + 10.2, 29.3, 52.7, bladeU - 1.2, -1);
   k.box(bladeU - 0.4, bladeU + 0.4, 52.7, 54, D + 0.6, D + 10.6, WOOD_DARK);
+
+  heightPass.applyAbove(FL, SHOP_HEIGHT_SCALE);
 
   // ---- the room behind the glass -----------------------------------------------------------------------------------
   const rb = -D + 18;
@@ -176,12 +207,20 @@ export function addCafe(c: Ctx, rect: Rect, f: Frame, W: number, D: number): voi
     k.icyl(u, 20.1, cl - 15.4, cl - 15, 1.8, 1.8, 6, [1.9, 1.7, 1.2], false);
   }
   for (let u = -66; u <= 66; u += 22) k.ibox(u - 1.7, u + 1.7, cl - 3.4, cl, rb, rf, hex(0x6a4630), 'BFL');
+  heightPass.applyAbove(FL, SHOP_HEIGHT_SCALE);
+
   // counter, espresso machine, cakes and stools
   k.ibox(-48, 8, FL, 17.5, rb + 6, rb + 17, hex(0x6a4630));
   k.ibox(-48.6, 8.6, 17.5, 18.6, rb + 5.4, rb + 17.6, hex(0xf2e8d4), 'TFKLR');
   k.ibox(-32, -19, 18.6, 24, rb + 8, rb + 14, hex(0x9aa0a8));
   k.ibox(-33, -18, 24, 25, rb + 7.6, rb + 14.4, hex(0x30343a));
-  for (let i = 0; i < 4; i++) k.ibox(-10 + i * 4.6, -6.4 + i * 4.6, 18.6, 22.2, rb + 12, rb + 15.6, [hex(0xf3c7d4), hex(0xf7e6b0), hex(0xd9b48a), hex(0xfaf3ea)][i]!);
+  for (let i = 0; i < 4; i++) {
+    const u = -8.2 + i * 4.6, v = rb + 13.8;
+    k.ibox(u - 1.8, u + 1.8, 18.6, 20.1, v - 1.8, v + 1.8, hex(0xd7b185));
+    k.ibox(u - 1.8, u + 1.8, 20.1, 20.6, v - 1.8, v + 1.8, hex(0xf7efdf));
+    k.ibox(u - 1.8, u + 1.8, 20.6, 21.6, v - 1.8, v + 1.8, [hex(0xf3c7d4), hex(0xf7e6b0), hex(0x8b5a40), hex(0xfaf3ea)][i]!);
+    k.iball(u, 22.1, v, .7, .55, .65, i % 2 ? hex(0x70513c) : hex(0xcc5257));
+  }
   for (const u of [-38, -22, -6]) {
     k.icyl(u, rb + 24, FL, FL + 7, 0.7, 0.7, 5, hex(0x3a2a20), false);
     k.icyl(u, rb + 24, FL + 7, FL + 8.4, 2.9, 2.9, 8, RED);
@@ -191,6 +230,7 @@ export function addCafe(c: Ctx, rect: Rect, f: Frame, W: number, D: number): voi
   for (const u of [-52, -32]) {
     k.icyl(u, tv, FL + 8.4, FL + 9.2, 5, 5, 8, hex(0xd6b080));
     k.icyl(u, tv, FL, FL + 8.4, 0.6, 0.6, 5, hex(0x3a2a20), false);
+    coffeeCup(k, u + 1, tv + .5, FL + 9.2, true);
     k.ibox(u - 2.6, u + 2.6, FL + 5, FL + 6, tv + 6.5, tv + 11.5, hex(0x7a5232));
     k.ibox(u - 2.6, u + 2.6, FL + 6, FL + 12, tv + 11, tv + 11.8, hex(0x5a3820));
   }
@@ -208,14 +248,14 @@ export function addCafe(c: Ctx, rect: Rect, f: Frame, W: number, D: number): voi
     for (let i = 0; i <= n; i++) {
       const u = u0 + ((u1 - u0) * i) / n;
       const v = v0 + ((v1 - v0) * i) / n;
-      k.box(u - 0.9, u + 0.9, P, P + 10.5, v - 0.9, v + 0.9, WOOD);
+      k.box(u - 0.55, u + 0.55, P, P + 6.5, v - 0.55, v + 0.55, WOOD);
     }
     if (alongU) {
-      k.box(Math.min(u0, u1), Math.max(u0, u1), P + 9.6, P + 11, v0 - 0.8, v0 + 0.8, WOOD_LIGHT);
-      k.box(Math.min(u0, u1), Math.max(u0, u1), P + 5, P + 6, v0 - 0.5, v0 + 0.5, WOOD);
+      k.box(Math.min(u0, u1), Math.max(u0, u1), P + 5.7, P + 6.5, v0 - 0.45, v0 + 0.45, WOOD_LIGHT);
+      k.box(Math.min(u0, u1), Math.max(u0, u1), P + 2.7, P + 3.2, v0 - 0.3, v0 + 0.3, WOOD);
     } else {
-      k.box(u0 - 0.8, u0 + 0.8, P + 9.6, P + 11, Math.min(v0, v1), Math.max(v0, v1), WOOD_LIGHT);
-      k.box(u0 - 0.5, u0 + 0.5, P + 5, P + 6, Math.min(v0, v1), Math.max(v0, v1), WOOD);
+      k.box(u0 - 0.45, u0 + 0.45, P + 5.7, P + 6.5, Math.min(v0, v1), Math.max(v0, v1), WOOD_LIGHT);
+      k.box(u0 - 0.3, u0 + 0.3, P + 2.7, P + 3.2, Math.min(v0, v1), Math.max(v0, v1), WOOD);
     }
   };
   rail(-dw + 1, -23, D + DK - 1, D + DK - 1);
@@ -232,30 +272,30 @@ export function addCafe(c: Ctx, rect: Rect, f: Frame, W: number, D: number): voi
   const pl1 = 66;
   const pv0 = D + DK - 11;
   const pv1 = D + DK - 3;
-  k.box(pl0, pl1, P, P + 9, pv0, pv1, BRICK);
-  k.tf(k.uv('brick'), pl0, pl1, P + 0.4, P + 8.6, pv1 + 0.05, 1);
-  k.ts(k.uv('brick'), pv0, pv1, P + 0.4, P + 8.6, pl0 - 0.05, -1);
-  k.ts(k.uv('brick'), pv0, pv1, P + 0.4, P + 8.6, pl1 + 0.05, 1);
-  k.box(pl0 + 0.8, pl1 - 0.8, P + 9, P + 9.6, pv0 + 0.8, pv1 - 0.8, hex(0x4a3020));
+  k.box(pl0, pl1, P, P + 6, pv0, pv1, BRICK);
+  k.tf(k.uv('brick'), pl0, pl1, P + 0.4, P + 5.6, pv1 + 0.05, 1);
+  k.ts(k.uv('brick'), pv0, pv1, P + 0.4, P + 5.6, pl0 - 0.05, -1);
+  k.ts(k.uv('brick'), pv0, pv1, P + 0.4, P + 5.6, pl1 + 0.05, 1);
+  k.box(pl0 + 0.8, pl1 - 0.8, P + 6, P + 6.6, pv0 + 0.8, pv1 - 0.8, hex(0x4a3020));
   for (let i = 0; i < 8; i++) {
     const u = pl0 + 3 + (i * (pl1 - pl0 - 6)) / 7;
     const v = (pv0 + pv1) / 2 + (i % 2 ? 1.4 : -1.4);
-    k.blob(u, P + 11, v, 3.4, 2.4, 2.8, hex(0x5e9a4c), 0.12, i);
-    k.blob(u + 0.4, P + 13.2, v, 2.4, 1.9, 2.2, FLOWERS[i % FLOWERS.length]!, 0.1, i + 7);
+    k.blob(u, P + 8.5, v, 3.0, 1.8, 2.4, hex(0x5e9a4c), 0.12, i);
+    k.plant(u + .4, P + 6.6, v, 4.5, i % 2 ? 'bedTulip' : 'bedPansy');
   }
   // olive tree in a pot at the far end of the deck
   const ou = -dw + 10;
-  k.cyl(ou, D + 9, P, P + 9, 4.2, 5.2, 8, hex(0xb9a48a));
-  k.cyl(ou, D + 9, P + 9, P + 26, 1, 0.7, 6, hex(0x6a5a46), false);
-  for (const [du, dy, dv, r] of [[0, 30, 0, 6.5], [-3.5, 26, 1.5, 5], [3.4, 27, -1.5, 5.2], [0.5, 35, 0.5, 4.6]] as const) {
-    k.blob(ou + du, P + dy, D + 9 + dv, r, r * 0.8, r, hex(0x8fa586), 0.1, du + dy);
+  k.cyl(ou, D + 9, P, P + 6.5, 3.2, 3.9, 10, hex(0xb9a48a));
+  k.cyl(ou, D + 9, P + 6.5, P + 17, .7, .45, 7, hex(0x6a5a46), false);
+  for (const [du, dy, dv, r] of [[0, 19, 0, 4.8], [-2.5, 15.5, 1, 3.8], [2.5, 16.2, -1.2, 4], [.4, 21.5, .4, 3.5]] as const) {
+    k.topiary(ou + du, P + dy, D + 9 + dv, r, r * .8, r, hex(0x6e9b58));
   }
   // A-frame chalkboard near the steps
-  const au = 28;
-  const av = D + DK - 14;
-  k.tq(k.uv('chalk:cafe'), [au + 6, P, av + 4.4], [au - 6, P, av + 4.4], [au - 6, P + 17.5, av + 0.8], [au + 6, P + 17.5, av + 0.8], [0, 4, 8]);
-  k.quad([au - 6, P, av - 4.4], [au + 6, P, av - 4.4], [au + 6, P + 17.5, av - 0.8], [au - 6, P + 17.5, av - 0.8], WOOD, [0, 4, -8]);
-  k.box(au - 6.4, au + 6.4, P + 17.2, P + 18.2, av - 1.2, av + 1.2, WOOD_DARK);
+  const au = 14;
+  const av = D + DK - 8;
+  k.tq(k.uv('chalk:cafe'), [au + 4, P, av + 3.2], [au - 4, P, av + 3.2], [au - 4, P + 13.5, av + 0.6], [au + 4, P + 13.5, av + 0.6], [0, 4, 8]);
+  k.quad([au - 4, P, av - 3.2], [au + 4, P, av - 3.2], [au + 4, P + 13.5, av - 0.6], [au - 4, P + 13.5, av - 0.6], WOOD, [0, 4, -8]);
+  k.box(au - 4.4, au + 4.4, P + 13.2, P + 14.2, av - 0.9, av + 0.9, WOOD_DARK);
   // potted plants by the door
   pot(k, doorC - 14, D + 4, P, 6, hex(0x5e9a4c));
   pot(k, doorC + 14, D + 4, P, 5, hex(0x6bab55));
@@ -264,7 +304,7 @@ export function addCafe(c: Ctx, rect: Rect, f: Frame, W: number, D: number): voi
     k.box(u - 0.2, u + 0.2, 36, 41, D + aOut - 3.1, D + aOut - 2.7, WOOD_DARK);
     k.cyl(u, D + aOut - 2.9, 33.4, 36.4, 2.2, 3.2, 8, WOOD_DARK);
     k.blob(u, 37.2, D + aOut - 2.9, 3.4, 2.2, 3.2, hex(0x5e9a4c), 0.1, u);
-    k.blob(u + 1, 38.4, D + aOut - 2.9, 2.2, 1.6, 2.1, FLOWERS[Math.abs(Math.round(u)) % FLOWERS.length]!, 0.1, u + 3);
+    k.plant(u, 35.5, D + aOut - 2.9, 6, 'bedCosmos');
   }
 
   c.obstacles.push(rect);

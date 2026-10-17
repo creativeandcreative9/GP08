@@ -41,6 +41,8 @@ export interface Person {
   animal: boolean;
   /** removed from the scene (stood in front of the camera) */
   hidden: boolean;
+  /** Temporarily held in place while the player has a conversation open. */
+  talking: boolean;
   // standing / sitting
   yawTarget: number;
   idle: number;
@@ -137,6 +139,9 @@ export function shopPoint(s: Spot, u: number, v: number): Pt {
 }
 
 export class Crowd {
+  private clock: number | null = null;
+  /** Daily destinations are points on each resident's collision-tested sidewalk route. */
+  setTime(minute: number): void { this.clock = minute; }
   readonly people: Person[] = [];
   readonly lanes: Lane[] = [];
   private readonly laneByKey = new Map<string, Lane>();
@@ -192,6 +197,7 @@ export class Crowd {
       staff: false,
       animal: false,
       hidden: false,
+      talking: false,
       yawTarget: 0,
       idle: this.rnd() * TWO_PI,
       lane: null,
@@ -675,7 +681,21 @@ export class Crowd {
   }
 
   private stepWalker(lane: Lane, p: Person, ws: readonly Person[], dt: number): void {
+    if (p.talking) { p.speed = 0; p.swing = 0; return; }
     const loop = p.s1 > lane.path.length * 100;
+    if (this.clock !== null && !p.buddy && !p.animal) {
+      const hour = this.clock / 60;
+      const start = loop ? 0 : p.s0, end = loop ? lane.path.length : p.s1;
+      const goal = hour >= 18 ? start + (end - start) * .08
+        : hour < 9 ? start + (end - start) * .9
+        : hour >= 12 && hour < 14 ? start + (end - start) * .5
+        : hour < 12 && p.outfit % 3 === 0 ? start + (end - start) * .9 : null;
+      if (goal !== null) {
+        const remaining = goal - p.s;
+        if (Math.abs(remaining) < 2.5) { p.speed = 0; p.swing = 0; return; }
+        if (p.pause <= 0) p.dir = remaining > 0 ? 1 : -1;
+      }
+    }
     if (p.buddy) {
       // follow the leader: same stretch, speed and pauses
       const l = p.buddy;
