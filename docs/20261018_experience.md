@@ -189,3 +189,9 @@ Jの根拠は既存の `/workspace/gp08-cloud-setup/tests-final-r47.log`（116 p
 これは**観察した設計品質についての自己評価の達成**であり、人間が感動したことの実測でも、全員にその反応を保証する判定でもない。端末実機や主観的な感情は未測定のまま明示する。この判定の配信確認は本番ビルドのローカル静的配信までで、GitHub Pagesへの最新ファイルの反映は別の配信記録で照合する。
 
 最終証跡は `/workspace/gp08-cloud-setup/experience-evaluation-final-independent.json`。固定40項目、配点、全150ケースの集計方法、アプリの不変性、実際に見た31画像のSHA-256、検証範囲と未確認事項を含む。改善前の公開画像は `screenshots/release-r47/` に保持している。
+
+## 公開反映の確認（採点後）
+
+実装コミット `016c6d8` を指定ブランチへプッシュし、同じ検証済みビルドを公開コミット `92acc9f` で配置した。[GitHub Pagesの処理](https://github.com/creativeandcreative9/GP08/actions/runs/39077141590)は成功。[公開URL](https://creativeandcreative9.github.io/GP08/)のHTML・主JS・CSS・ハッシュ一覧を取得し、検証済みファイルとの一致を確認した。これは採点後の配信確認であり、主観評価やスマホ実機測定の点を上げる理由には使わない。最終点は92.75点のまま。
+
+記録は `/workspace/gp08-cloud-setup/experience-public-verification.json`。この追記は文書だけで、評価対象のアプリケーションは変わっていない。

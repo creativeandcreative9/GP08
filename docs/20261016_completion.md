@@ -26,7 +26,13 @@
 
 証跡は `/workspace/gp08-cloud-setup/experience-tests-final.log`、`experience-migration-final.log`、`experience-release-final.log`、`experience-source-verified.json` と `screenshots/release-check.json`。改善前の公開検査画像は `screenshots/release-r47/` に同一内容のまま保存した。画像・ログ・私有資産を公開ソースへコミットしない。
 
-GitHub Pagesへの反映はこれから実施する。以下は改善前r47の履歴であり、新しいビルドやテストの結果と混同しない。
+### 改善版のオンライン公開
+
+[ブラウザで遊ぶ](https://creativeandcreative9.github.io/GP08/)。実装・テスト・研究と評価文書を `016c6d8fcdb8330c180f53cebbebbf3dffb02a47` として指定ブランチへコミット・プッシュした。公開用160ファイル（ビルド158＋ハッシュ一覧＋.nojekyll）を `92acc9fb4bca3a524256c350c9df7171af9d0dfc` としてgh-pagesへ通常のプッシュで反映した。作業用チェックアウトは切り替えず、既存履歴を保持した。
+
+[公開処理](https://github.com/creativeandcreative9/GP08/actions/runs/39077141590)は24秒で成功。2026年10月18日07:58（日本時間）に公開URLのHTML・主JS・CSS・ハッシュ一覧をHTTP 200で取得し、検証済みビルドとの一致を確認した。ハッシュ一覧の全158ファイルもローカルのビルドと照合した。これは公開ファイルの確認であり、スマホ実機で操作したことやFPSを測定したことを意味しない。
+
+公開証跡は `/workspace/gp08-cloud-setup/experience-deployment.json` と `experience-public-verification.json`。この公開結果の追記は文書のみで、検証済みアプリ・テスト・ビルドを変更しない。以下は改善前r47の履歴であり、新しい結果と混同しない。
 
 ## 改善前r47のビルドと公開の履歴
 
