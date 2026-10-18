@@ -1,4 +1,4 @@
-import{c as e}from"./index-_nm5jCbD.js";import{n as t,o as n,r}from"./mmd-BvlcMdqx.js";function i(e){return e.replace(/[.*+?^${}()|[\]\\]/g,`\\$&`)}var a=class extends n{isCompatible(t){switch(t){case e.WGSL:return!0;default:return!1}}getCustomCode(e){if(e===`vertex`){let e={};return e.CUSTOM_VERTEX_DEFINITIONS=r,e[`!${i(`finalWorld=finalWorld*influence;`)}`]=`
+import{c as e}from"./index-CJkbrCW7.js";import{n as t,o as n,r}from"./mmd-DntZAX0X.js";function i(e){return e.replace(/[.*+?^${}()|[\]\\]/g,`\\$&`)}var a=class extends n{isCompatible(t){switch(t){case e.WGSL:return!0;default:return!1}}getCustomCode(e){if(e===`vertex`){let e={};return e.CUSTOM_VERTEX_DEFINITIONS=r,e[`!${i(`finalWorld=finalWorld*influence;`)}`]=`
 ${t}
 finalWorld=(finalWorld*influence);
 `,e}if(e===`fragment`){let e={};e.CUSTOM_FRAGMENT_DEFINITIONS=`
