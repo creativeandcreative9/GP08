@@ -51,3 +51,11 @@
 昼・夜・雨・縦・横・計測の6画像をすべて実表示した。30秒計測は31フレーム／30,773.1msで完了し、結果コピーまで確認した。平均1.007 FPSはクラウドのSwiftShaderによる機能検査の結果であり、スマホ実機の性能を示さない。実機確認は [スマホ確認手順](20261017_mobile.md) に従う。
 
 主JSのSHA-256は `1fb64f8d1346185e32c6cb2dea68255ace1b8aa43490e3608cc3c6071af90587`、CSSは `c94934a03ab22951edea67941f1988a89f308e5ad9c09cd26fdbf9b4a628e54d`。画像と検査JSONは `screenshots/release-sprint-hunger/` に保持し、コミットしない。ログは `/workspace/gp08-cloud-setup/` の `sprint-hunger-full.log`、`sprint-hunger-integration.log`、`sprint-hunger-shot.log`、`sprint-hunger-eval.log`、`sprint-hunger-release.log`。ソース・テスト・ツール183ファイルは、全体試験とビルド前に凍結したSHA-256と一致する。
+
+## オンライン公開
+
+[GP08をブラウザで開く](https://creativeandcreative9.github.io/GP08/)。実装・テスト・検証記録を `2bf7c9bfaca0e316bc619d8d681d1adc7de43156` として `claude/zen-ptolemy-pa63je` へコミット・プッシュした。検証済みビルド158ファイルとハッシュ一覧・`.nojekyll` の計160ファイルを、公開コミット `e778333b8fbae0f9fc187ff5460acc8443fef9f0` として `gh-pages` へ通常のプッシュで反映し、既存履歴を保持した。
+
+[GitHub Pagesの公開処理](https://github.com/creativeandcreative9/GP08/actions/runs/39099557828)が成功。2026年10月18日 14:09（日本時間）に、公開HTML・主JS・CSS・ハッシュ一覧をHTTP 200で取得し、検証済みファイルとの一致を確認した。取得した一覧に含まれる158ファイル分のハッシュもローカルのビルドと全照合した。通常の `/GP08/` URLでもHTMLのHTTP 200と同一内容を確認した。実スマホでの操作・FPS計測とは別の公開確認である。
+
+証跡は `/workspace/gp08-cloud-setup/sprint-hunger-deployment.json`、`sprint-hunger-pages-result.json`、`sprint-hunger-public-verification.json`。公開後の文書更新ではアプリ・テスト・検証済みビルドを変更しない。
