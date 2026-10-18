@@ -62,7 +62,7 @@ test('night streets retain readable neutral fill while the afternoon lighting st
     life.minute = 14 * 60; environment.update(life, false); const restored = { intensity: hemi.intensity, color: hemi.diffuse.asArray() };
     scene.dispose(); engine.dispose(); return { day, night, indoors, restored };
   });
-  expect(result.day.intensity).toBeCloseTo(.9); expect(result.day.color).toEqual([.8, .86, 1]);
+  expect(result.day.intensity).toBeCloseTo(.76); expect(result.day.color).toEqual([.76, .84, 1]);
   expect(result.night.intensity).toBeGreaterThan(.58); expect(result.night.intensity).toBeLessThan(result.day.intensity);
   // A visible red component keeps skin and cream paving readable instead of flattening them to blue.
   expect(result.night.color[0]! / result.night.color[2]!).toBeGreaterThan(.67);

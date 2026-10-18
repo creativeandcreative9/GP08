@@ -3,7 +3,6 @@ import { Color3, Color4 } from '@babylonjs/core/Maths/math.color.js';
 import { ColorCurves } from '@babylonjs/core/Materials/colorCurves.js';
 import { DefaultRenderingPipeline } from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline.js';
 import { ImageProcessingConfiguration } from '@babylonjs/core/Materials/imageProcessingConfiguration.js';
-import { SSAO2RenderingPipeline } from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/ssao2RenderingPipeline.js';
 import { ShadowGenerator } from '@babylonjs/core/Lights/Shadows/shadowGenerator.js';
 import { type AbstractEngine } from '@babylonjs/core/Engines/abstractEngine.js';
 import { type AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh.js';
@@ -51,22 +50,35 @@ export function setupRendering(
   ip.toneMappingEnabled = true;
   // Khronos PBR Neutral keeps hues and pastel saturation (ACES darkens and shifts them)
   ip.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
-  ip.exposure = 1.05;
-  ip.contrast = 1.02;
+  ip.exposure = 1.03;
+  ip.contrast = 1.03;
+
+  // The same restrained palette applies to the inexpensive material path on phones.
+  const cc = new ColorCurves();
+  cc.shadowsHue = 242;
+  cc.shadowsDensity = 24;
+  cc.shadowsSaturation = 8;
+  cc.shadowsExposure = 7;
+  cc.highlightsHue = 38;
+  cc.highlightsDensity = 16;
+  cc.highlightsSaturation = 4;
+  cc.globalSaturation = -8;
+  ip.colorCurves = cc;
+  ip.colorCurvesEnabled = true;
 
   if (q === 'low') {
-    scene.getEngine().setHardwareScalingLevel(1.5);
+    scene.getEngine().setHardwareScalingLevel(navigator.maxTouchPoints > 0 && matchMedia('(pointer: coarse)').matches ? 1.25 : 1.5);
     return { quality: q, addShadowCaster: () => {} };
   }
 
   const csm = new CascadedShadowGenerator(2048, sun);
   csm.numCascades = 3;
-  csm.shadowMaxZ = 2400; // shadows within ~190 m of the viewer: the street-level scale that matters
-  csm.lambda = 0.9;
+  csm.shadowMaxZ = 1800; // concentrate texels on the shopfronts and trees within ~145 m
+  csm.lambda = 0.92;
   csm.stabilizeCascades = true;
   csm.cascadeBlendPercentage = 0.1;
   csm.useContactHardeningShadow = true;
-  csm.contactHardeningLightSizeUVRatio = .012;
+  csm.contactHardeningLightSizeUVRatio = .008;
   csm.filteringQuality = ShadowGenerator.QUALITY_MEDIUM;
   // Keep thin eaves and window frames attached to their shadows at street scale.
   csm.bias = 0.0006;
@@ -85,39 +97,15 @@ export function setupRendering(
   for (const m of casters) csm.addShadowCaster(m, false);
   for (const m of receivers) m.receiveShadows = true;
 
-  let ao: SSAO2RenderingPipeline | undefined;
-  // contact shadows: darkening under eaves, in corners and at the foot of things
-  if (SSAO2RenderingPipeline.IsSupported) {
-    ao = new SSAO2RenderingPipeline('ao', scene, { ssaoRatio: 0.5, blurRatio: 0.5 }, [camera], false);
-    ao.radius = 6;
-    ao.totalStrength = 1.3;
-    ao.base = 0.06;
-    ao.samples = 16;
-    ao.maxZ = 2500;
-    ao.minZAspect = 0.3;
-    ao.expensiveBlur = true;
-    ao.bilateralSamples = 12;
-  }
-
-  // colour grading: cool violet-blue in the shade, warm gold in the light, shadows lifted a little (never black)
-  const cc = new ColorCurves();
-  cc.shadowsHue = 252;
-  cc.shadowsDensity = 38;
-  cc.shadowsSaturation = 12;
-  cc.shadowsExposure = 8;
-  cc.highlightsHue = 42;
-  cc.highlightsDensity = 28;
-  cc.highlightsSaturation = 6;
-  cc.globalSaturation = -12;
-  ip.colorCurves = cc;
-  ip.colorCurvesEnabled = true;
+  // Sun shadows supply contact and architectural depth. Screen-space AO produced
+  // false occlusion on smooth trunks and a repeating bright grid on terrace boards.
 
   const pipe = new DefaultRenderingPipeline('post', true, scene, [camera]);
   pipe.samples = 4;
   pipe.fxaaEnabled = true;
   pipe.bloomEnabled = true;
   pipe.bloomThreshold = 0.82;
-  pipe.bloomWeight = 0.22;
+  pipe.bloomWeight = 0.14;
   pipe.bloomKernel = 48;
   pipe.bloomScale = 0.5;
   pipe.imageProcessingEnabled = true;
@@ -134,7 +122,7 @@ export function setupRendering(
     get quality() { return active ? 'high' as const : 'low' as const; },
     downgrade: () => {
       if (!active) return;
-      active = false; pipe.dispose(); ao?.dispose(); csm.dispose();
+      active = false; pipe.dispose(); csm.dispose();
       for (const m of receivers) m.receiveShadows = false;
       for (const m of casters) if (m.metadata?.blossomShadow) m.dispose(false, false);
     },
@@ -150,9 +138,9 @@ export function setupRendering(
 
 /** Light colours for a clear spring afternoon (used by the scene's sun and sky light). */
 export const LIGHT = {
-  sunColor: new Color3(1, 0.91, 0.78),
-  sunIntensity: 1.15,
-  skyColor: new Color3(0.8, 0.86, 1),
-  groundColor: new Color3(0.66, 0.6, 0.56),
-  skyIntensity: 0.9,
+  sunColor: new Color3(1, 0.94, 0.85),
+  sunIntensity: 1.35,
+  skyColor: new Color3(0.76, 0.84, 1),
+  groundColor: new Color3(0.48, 0.50, 0.58),
+  skyIntensity: 0.76,
 } as const;

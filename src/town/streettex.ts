@@ -59,20 +59,20 @@ function blot(g: G, w: number, h: number, x: number, y: number, r: number, c: C3
 
 /** Staggered 32 x 16 cm concrete pavers, with fine joints and quiet warm-grey variation. */
 export function paveTexture(scene: Scene): DynamicTexture {
-  const W = 2048, H = 256, T = 128, J = 3;
+  const W = 2048, H = 256, T = 128, J = 2;
   return make(scene, 'streetPave', W, H, (g) => {
     const rnd = makeRng(1701), tile = document.createElement('canvas'); tile.width = tile.height = T;
     const t = tile.getContext('2d')!;
-    g.fillStyle = '#aaa59c'; g.fillRect(0, 0, W, H);
-    const warm: C3[] = [[214, 207, 198], [209, 202, 193], [218, 212, 203], [207, 200, 191]];
-    const cool: C3[] = [[204, 203, 199], [199, 199, 195], [209, 208, 202], [202, 201, 196]];
+    g.fillStyle = '#b4b0a6'; g.fillRect(0, 0, W, H);
+    const stones: C3[] = [[211, 207, 199], [207, 204, 197], [214, 210, 202], [209, 207, 201]];
     for (let ty = 0; ty < H / T; ty++) for (let tx = 0; tx < W / T; tx++) {
       t.clearRect(0, 0, T, T);
-      const family = (tx + ty) % 2 ? cool : warm, base = family[Math.floor(rnd() * family.length)]!, k = .98 + rnd() * .04;
+      // Individual slabs vary quietly; alternating warm/cool rows read as a checkerboard from the street.
+      const base = stones[Math.floor(rnd() * stones.length)]!, k = .99 + rnd() * .02;
       const x = J / 2, y = J / 2, size = T - J, gradient = t.createLinearGradient(x, y, x + size, y + size);
-      gradient.addColorStop(0, css(base, k * 1.025)); gradient.addColorStop(1, css(base, k * .975)); t.fillStyle = gradient; t.fillRect(x, y, size, size);
-      t.fillStyle = 'rgba(255,255,255,.18)'; t.fillRect(x, y, size, 2); t.fillRect(x, y, 2, size);
-      t.fillStyle = 'rgba(60,50,38,.14)'; t.fillRect(x, y + size - 2, size, 2); t.fillRect(x + size - 2, y, 2, size);
+      gradient.addColorStop(0, css(base, k * 1.012)); gradient.addColorStop(1, css(base, k * .988)); t.fillStyle = gradient; t.fillRect(x, y, size, size);
+      t.fillStyle = 'rgba(255,255,255,.14)'; t.fillRect(x, y, size, 1); t.fillRect(x, y, 1, size);
+      t.fillStyle = 'rgba(60,50,38,.09)'; t.fillRect(x, y + size - 1, size, 1); t.fillRect(x + size - 1, y, 1, size);
       const chips = 1 + Math.floor(rnd() * 3);
       for (let i = 0; i < chips; i++) { t.fillStyle = rnd() < .5 ? 'rgba(70,62,50,.15)' : 'rgba(255,255,255,.12)'; t.fillRect(x + 6 + rnd() * (size - 14), y + 6 + rnd() * (size - 14), 2 + rnd() * 3, 1 + rnd() * 2); }
       const at = tx * T - (ty % 2) * T / 2;
@@ -92,7 +92,7 @@ export function kerbTexture(scene: Scene): DynamicTexture {
   const W = 4096;
   const H = 128;
   const B = 256;
-  const J = 5;
+  const J = 3;
   return make(
     scene,
     'streetKerb',
@@ -100,24 +100,24 @@ export function kerbTexture(scene: Scene): DynamicTexture {
     H,
     (g) => {
       const rnd = makeRng(4242);
-      g.fillStyle = '#5b5c59';
+      g.fillStyle = '#92938c';
       g.fillRect(0, 0, W, H);
       for (let b = 0; b < W / B; b++) {
-        const l = 176 + rnd() * 30;
+        const l = 184 + rnd() * 16;
         const base: C3 = [l + (rnd() - 0.5) * 6, l, l - 2 - rnd() * 5];
         const x = b * B + J / 2;
         const w = B - J;
         const gr = g.createLinearGradient(0, 0, 0, H);
-        gr.addColorStop(0, css(base, 1.07));
+        gr.addColorStop(0, css(base, 1.04));
         gr.addColorStop(0.6, css(base, 1.0));
-        gr.addColorStop(1, css(base, 0.8));
+        gr.addColorStop(1, css(base, 0.92));
         g.fillStyle = gr;
         g.fillRect(x, 0, w, H);
         // a lit edge along the top of the face and a dark weathered edge at the foot
         g.fillStyle = 'rgba(255,255,255,0.16)';
-        g.fillRect(x, 0, w, 4);
-        g.fillStyle = 'rgba(40,34,26,0.18)';
-        g.fillRect(x, H - 14, w, 14);
+        g.fillRect(x, 0, w, 2);
+        g.fillStyle = 'rgba(40,34,26,0.12)';
+        g.fillRect(x, H - 7, w, 7);
         const n = 2 + Math.floor(rnd() * 4);
         for (let i = 0; i < n; i++) {
           g.fillStyle = 'rgba(55,52,46,0.35)';
@@ -144,18 +144,18 @@ export function tactileLineTexture(scene: Scene): DynamicTexture {
     g.fillRect(0, 0, W, H);
     for (let b = 0; b < 4; b++) {
       const x0 = b * 128;
-      g.fillStyle = '#e9bf20';
+      g.fillStyle = '#dfb72b';
       g.fillRect(x0 + 3, 3, 122, 122);
       for (let i = 0; i < 4; i++) {
         const y = 10 + i * 29;
-        g.fillStyle = '#b98e0d'; // shadow under the bar
+        g.fillStyle = '#b99a27'; // shallow shadow under the matte bar
         g.fillRect(x0 + 10, y + 4, 108, 22);
-        g.fillStyle = '#f7d537';
+        g.fillStyle = '#edca43';
         g.fillRect(x0 + 10, y, 108, 20);
-        g.fillStyle = '#fdeb92'; // lit top edge
-        g.fillRect(x0 + 10, y, 108, 3);
-        g.fillStyle = '#e2b81c'; // shaded lower edge
-        g.fillRect(x0 + 10, y + 16, 108, 4);
+        g.fillStyle = '#f4dc7d'; // narrow worn edge, without a metallic stripe
+        g.fillRect(x0 + 10, y, 108, 2);
+        g.fillStyle = '#d3af32'; // shaded lower edge
+        g.fillRect(x0 + 10, y + 18, 108, 2);
       }
     }
     grain(g, W, H, 8, rnd);

@@ -399,6 +399,7 @@ export function buildStreetscape(c: Ctx): StreetResult {
 
   // ---- meshes -------------------------------------------------------------------------------------------------------------
   const paveMat = texMat(scene, 'streetPaveMat', T.paveTexture(scene), 1.3);
+  paveMat.diffuseColor.setAll(.88);
   const asphMat = texMat(scene, 'streetAsphaltMat', T.asphaltTexture(scene), 3.4);
   // Weathered grey asphalt keeps the sun/shade boundary readable without changing the lights.
   asphMat.diffuseColor.setAll(1.6);

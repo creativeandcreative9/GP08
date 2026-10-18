@@ -10,9 +10,9 @@ import { ellipsoid } from '../life/geom';
 
 const PLASTER = hex(0xf1e8d3);
 const PLASTER_SIDE = hex(0xe6dac0);
-const WOOD_DARK = hex(0x5a3826);
-const WOOD_MID = hex(0x7a5236);
-const WOOD_LIGHT = hex(0xc9955c);
+const WOOD_DARK = hex(0x594a39);
+const WOOD_MID = hex(0x80664b);
+const WOOD_LIGHT = hex(0xb39770);
 const STONE = hex(0x908c84);
 const TILE_ROOF = hex(0x3b4150);
 const TILE_ROOF2 = hex(0x4a5161);
@@ -179,6 +179,9 @@ export function addWagashi(c: Ctx, rect: Rect, f: Frame, W: number, D: number): 
   for (const u of [-5, 5]) k.ifa(u - 4.8, u + 4.8, 24, 36.5, rb + 0.2, 1, hex(0x1f3263));
   // the left wall is what the sight lines through the windows end on: shelves of boxes, and the menu board above
   k.ts(slice(k.uv('in:wagashi'), 0, 0.74), -40, 56, 8, 41, -rU + 0.15, 1, [1.05, 1.02, 0.95]);
+  // Actual shelf lips and end cheeks separate the sweets from the back-wall image.
+  for (const y of [8, 19, 30, 41]) k.ibox(-rU + .2, -rU + 3.2, y - .65, y, -40, 56, WOOD_MID, 'TFR');
+  for (const v of [-40, 8, 56]) k.ibox(-rU + .2, -rU + 2.8, 8, 41, v - .4, v + .4, WOOD_DARK, 'TFR');
   k.ts(k.uv('menu:wagashi'), -12, 32, 41.5, 52, -rU + 0.15, 1);
   for (let u = -66; u <= 66; u += 22) k.ibox(u - 1.7, u + 1.7, cl - 3.6, cl, rb, rf, hex(0x5a3a26), 'BFL'); // ceiling beams
   for (const u of [-40, 6, 52]) {
@@ -191,6 +194,10 @@ export function addWagashi(c: Ctx, rect: Rect, f: Frame, W: number, D: number): 
   k.ibox(-52, 30, FL, 14, -26, -14, hex(0x4a2f1e));
   k.tf(k.uv('case:wagashi'), -52, 30, 14.2, 23, -14.1, 1);
   k.ibox(-52, 30, 23, 24, -26, -14, hex(0x4a2f1e), 'T');
+  const caseFrame = hex(0xb8a98b);
+  for (const u of [-52, -11, 30]) k.ibox(u - .25, u + .25, 14, 24, -14.2, -13.55, caseFrame, 'TFLR');
+  k.ibox(-52, 30, 13.8, 14.3, -14.3, -13.5, caseFrame, 'TFLR');
+  k.ibox(-52, 30, 23.4, 24, -26, -13.5, caseFrame, 'TFLR');
   // window display: red tiers behind the right bay, rising towards the back
   // All three display levels sit above the ten-unit window sill.
   const tiers = [{ v0: 50, y: 11.2 }, { v0: 44, y: 14.6 }, { v0: 38, y: 18 }];

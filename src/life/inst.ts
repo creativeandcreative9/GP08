@@ -7,6 +7,7 @@ import { type Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { type Scene } from '@babylonjs/core/scene.js';
 import { smoothBevels } from '../town/smooth';
 import type { MeshBatch } from '../town/batch';
+import { compactLifeTemplate } from './compact-template';
 
 /**
  * Row-major 4x4 matrices (the layout of Babylon's thin-instance buffers, row vectors: v' = v * M).
@@ -97,6 +98,7 @@ export class Instances {
     readonly capacity: number,
   ) {
     smoothBevels(batch);
+    compactLifeTemplate(batch);
     this.mesh = batch.toMesh(name, scene, material);
     this.data = new Float32Array(Math.max(1, capacity) * 16);
     for (let i = 0; i < capacity; i++) hideInstance(this.data, i * 16);

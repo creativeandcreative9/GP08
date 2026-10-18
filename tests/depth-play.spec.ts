@@ -113,11 +113,31 @@ test('real town stories, discoveries, scenic pauses and personal records remain 
       await expect(page.getByRole('dialog')).toContainText('ベンチに座ってから');
       expect((await state(page)).stories.arcs[0]!.stage).toBe('accepted');
       await close(page);
-      await page.evaluate(() => {
+      const benchId = await page.evaluate(() => {
         const w = window.__gp08, g = w.gameplay as any;
-        const bench = g.restSpots().find((b: any) => b.z === 180 && !g.contacts().some((c: any) => c.kind === 'resident' && Math.hypot(c.x - b.x, c.z - b.z) < 12));
-        w.player!.position.set(bench.exit.x, bench.exit.y, bench.exit.z); g.updateNearby();
+        if (g.currentPlace() !== 'plaza') throw new Error(`Expected to remain in plaza before resting; current place: ${g.currentPlace()}`);
+        const plaza = g.places.find((p: any) => p.id === 'plaza');
+        if (!plaza) throw new Error('The plaza destination is missing');
+        const candidates = g.restSpots().filter((b: any) => Math.hypot(b.x - plaza.x, b.z - plaza.z) < 240);
+        const contacts = g.contacts().filter((c: any) => c.kind === 'resident');
+        for (const bench of candidates) {
+          // A collectible can take priority at the exact stand-up point. Also try
+          // approaching a little farther from the seat, through the same real UI gate.
+          for (const farther of [0, 8]) {
+            const x = bench.exit.x + bench.fx * farther, z = bench.exit.z + bench.fz * farther;
+            w.player!.position.set(x, w.scene!.metadata.town.heightAt(x, z), z);
+            g.updateNearby();
+            if (g.currentPlace() === 'plaza' && document.querySelector('.life-interact')?.textContent?.includes('座る')) return bench.id;
+          }
+        }
+        const details = candidates.map((b: any) => {
+          const nearby = contacts.filter((c: any) => Math.hypot(c.x - b.x, c.z - b.z) < 20)
+            .map((c: any) => `${c.id} d=${Math.hypot(c.x - b.x, c.z - b.z).toFixed(1)} dy=${Math.abs(c.y - b.y).toFixed(1)}`);
+          return `${b.id} (${b.x.toFixed(1)},${b.z.toFixed(1)}): ${nearby.join(', ') || 'no nearby residents; actual interaction unavailable'}`;
+        });
+        throw new Error(`No usable bench in the current plaza radius. Candidates: ${details.join('; ') || 'none'}`);
       });
+      expect(benchId).toBeTruthy();
       await expect(page.locator('.life-interact')).toContainText('座る');
       await page.locator('.life-interact').click();
       expect(await page.evaluate(() => !!window.__gp08.player!.resting)).toBe(true);

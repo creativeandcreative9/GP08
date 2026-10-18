@@ -36,7 +36,7 @@ const WALK_SPEED = 17.5; // ≈ 1.4 m/s
 const RUN_SPEED = 40; // ≈ 3.2 m/s
 const TURN_RATE = 10; // how quickly the body turns to the walking direction
 const RADIUS = 4; // body radius for collisions
-const CAMERA_HEIGHT = 14; // look-at point above the feet
+const CAMERA_HEIGHT = 16; // eye/shoulder height keeps the street and its skyline in view
 
 /**
  * Third-person player: WASD / arrow keys walk relative to the camera, Shift runs, the mouse orbits the camera.
@@ -46,8 +46,8 @@ export class Player {
   readonly root: Mesh;
   readonly gait: Avatar['gait'];
   private readonly keys = new Set<string>();
-  private wantedRadius = 60;
-  private appliedRadius = 60;
+  private wantedRadius = 78;
+  private appliedRadius = 78;
   private heading = 0;
   private speed = 0;
   private baseSpeed = 0;
@@ -81,8 +81,8 @@ export class Player {
     camera.inputs.removeByType('ArcRotateCameraKeyboardMoveInput');
     camera.lowerRadiusLimit = 20;
     camera.upperRadiusLimit = 400;
-    camera.radius = 60;
-    camera.beta = 1.25;
+    camera.radius = 78;
+    camera.beta = 1.43;
     camera.alpha = -Math.PI / 2; // south of the player, looking north (the way the player starts facing)
     this.heading = Math.PI; // face north
     this.updateCameraTarget();

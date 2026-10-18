@@ -111,7 +111,17 @@ export function addConbini(c: Ctx, rect: Rect, f: Frame, W: number, D: number): 
     k.ibox(u - 3, u + 3, FL, 19.5, v0, v1, [0.9, 0.92, 0.94], 'TFKLR');
     k.ts(k.uv(faces[i]!), v0 + 1, v1 - 1, FL + 1.2, 19, u + 3.08, 1);
     k.ts(k.uv(faces[(i + 1) % 4]!), v0 + 1, v1 - 1, FL + 1.2, 19, u - 3.08, -1);
-    k.ibox(u - 2.6, u + 2.6, 19.5, 22, v0, v0 + 6, i % 2 ? hex(0xf0b030) : hex(0xe85a4a), 'TFR'); // end display
+    // Slim projecting shelf edges cast readable layers at oblique street angles.
+    for (const y of [FL + .5, 10, 15, 19.5]) {
+      k.ibox(u - 3.55, u + 3.55, y - .4, y, v0, v1, hex(0xd0d4cb), 'TFLR');
+    }
+    // A grouped end display has individual silhouettes, rather than one bright solid block.
+    const packageColors = [hex(0xd3b27b), hex(0x97af9b), hex(0xce8f82)];
+    for (let j = 0; j < 3; j++) {
+      const a = u - 2.55 + j * 1.8, top = 21.5 + (j + i) % 3 * .55;
+      k.ibox(a, a + 1.5, 19.5, top, v0 + .4, v0 + 4.5, packageColors[(i + j) % 3]!, 'TFKLR');
+      k.ibox(a + .25, a + 1.25, top - 1.2, top - .5, v0 + 4.52, v0 + 4.56, hex(0xf7f1e0), 'F');
+    }
   });
   // hanging sale boards over the aisles (both sides printed)
   for (const [u, v, key] of [[-60, 8, 'p:sale'], [-40, -22, 'p:new'], [-20, 24, 'p:oden']] as const) {

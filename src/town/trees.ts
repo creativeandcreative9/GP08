@@ -17,10 +17,11 @@ const LEAF: RGB[] = [0x6cc060, 0x59b052, 0x7ccb6a, 0x4c9f4f].map(hex);
 
 // ---- cherry colours (base albedo) -----------------------------------------------------------
 /** Dark grey-brown bark: darker at the foot, a little lighter and warmer towards the twigs. */
-const BARK_FOOT = hex(0x362e2b);
-const BARK_TRUNK = hex(0x433834);
-const BARK_LIMB = hex(0x54463f);
-const BARK_TWIG = hex(0x66534a);
+// Keep the bark readable under a full canopy; the sun shadow supplies its darkness.
+const BARK_FOOT = hex(0x4b3d37);
+const BARK_TRUNK = hex(0x5c493f);
+const BARK_LIMB = hex(0x715b4d);
+const BARK_TWIG = hex(0x826b59);
 /** Blossom tones, from near-white pink on sunlit tops to deep pink in the shade underneath. */
 const BLOSSOM_TOP: readonly [RGB, RGB] = [hex(0xfffafc), hex(0xfff0f6)];
 const BLOSSOM_MID: readonly [RGB, RGB] = [hex(0xffdce9), hex(0xffc4da)];
@@ -486,104 +487,131 @@ export function addCherry(c: Ctx, x: number, z: number, scale = 1): void {
     const d = norm(sub(to, from));
     const side = norm(cross(d, [0, 1, 0]));
     ts.forEach((t, i) => {
-      const rr = (r0 + (r1 - r0) * t) * s * (0.9 + r() * 0.3);
+      const rr = (r0 + (r1 - r0) * t) * s * (0.76 + r() * 0.48);
       const p = mixP(from, to, t);
       const off = (r() - 0.5) * rr * 1.1;
       // the outermost bunch of a branch forms the outline of the crown: it gets the smoother solid
-      put([p[0] + side[0] * off, p[1] + rr * (0.35 + r() * 0.25), p[2] + side[2] * off], rr, 0.62 + r() * 0.25, r(), i === ts.length - 1 ? outerLevel : 0);
+      put([p[0] + side[0] * off, p[1] + rr * (0.28 + r() * 0.42), p[2] + side[2] * off], rr, 0.78 + r() * 0.32, r(), i === ts.length - 1 ? outerLevel : 0);
     });
   };
   /** Hanging tassels of deeper pink under the outer ends of a branch. */
   const tassels = (tp: V3, o: V3, n: number): void => {
     for (let i = 0; i < n; i++) {
-      const rr = (4.6 + r() * 2.2) * s;
-      const dx = (r() - 0.3) * 6 * s;
-      const dz = (r() - 0.5) * 7 * s;
-      put([tp[0] + o[0] * dx - o[2] * dz, tp[1] - (2.5 + r() * 3.5) * s, tp[2] + o[2] * dx + o[0] * dz], rr, 1.25 + r() * 0.3, 0.05 + r() * 0.3, 0);
+      const rr = (3.4 + r() * 1.5) * s;
+      const dx = (r() - 0.5) * 3 * s;
+      const dz = (r() - 0.5) * 4 * s;
+      // The small spray overlaps the parent bunch at the branch tip; it must not hang
+      // below an empty gap between the stationary twig and its camera-facing flowers.
+      put([tp[0] + o[0] * dx - o[2] * dz, tp[1] + (1 + r() * 1.5) * s, tp[2] + o[2] * dx + o[0] * dz], rr, 1.25 + r() * 0.2, 0.15 + r() * 0.25, 0);
     }
   };
 
   const knees: P3[] = [];
   const tipsAll: P3[] = [];
   for (let k = 0; k < nLimb; k++) {
-    const az = a0 + (k + (r() - 0.5) * 0.45) * ((Math.PI * 2) / nLimb);
+    const az = a0 + (k + (r() - 0.5) * 0.7) * ((Math.PI * 2) / nLimb);
     const rb = (big ? 2.3 + r() * 0.5 : 1.6 + r() * 0.3) * Math.pow(s, 0.85);
     const out: P3 = [Math.cos(az), 0, Math.sin(az)];
-    const start: P3 = [fork[0] + out[0] * rb * 0.6, fork[1] - 1.5 * s, fork[2] + out[2] * rb * 0.6];
+    const start: P3 = [fork[0] + out[0] * rb * 0.6, fork[1] - (big ? 1.5 + k / nLimb * 9 : 1.5) * s, fork[2] + out[2] * rb * 0.6];
     if (big) {
-      const e1 = rad(62 + r() * 12);
-      const L1 = (28 + r() * 6) * s;
+      const e1 = rad(58 + r() * 20);
+      const L1 = (25 + r() * 12) * s;
       const knee = addv(start, scl(dirOf(az, e1), L1));
       const az2 = az + (r() - 0.5) * 0.55;
-      const e2 = rad(22 + r() * 16);
-      const L2 = (20 + r() * 5) * s;
+      const e2 = rad(12 + r() * 26);
+      const L2 = (18 + r() * 9) * s;
       const dir2 = dirOf(az2, e2);
       const tip = addv(knee, scl(dir2, L2));
-      limb(b, [start, knee, tip], [rb, rb * 0.7, rb * 0.46], 6, [BARK_LIMB, BARK_LIMB], r);
+      // A few shared rings round the shoulder of each limb. The off-axis bend breaks the
+      // repeated straight V while keeping every secondary branch attached to a real joint.
+      const bend = (r() - .5) * 4 * s;
+      const rise = mixP(start, knee, .5), shoulder = mixP(knee, tip, .5);
+      rise[0] -= out[0] * 1.8 * s + out[2] * bend;
+      rise[1] += 2 * s; rise[2] -= out[2] * 1.8 * s - out[0] * bend;
+      shoulder[0] -= out[2] * bend * .5; shoulder[1] += 2.5 * s; shoulder[2] += out[0] * bend * .5;
+      limb(b, [start, rise, knee, shoulder, tip], [rb, rb * .86, rb * .7, rb * .55, rb * .38], 6, [BARK_LIMB, BARK_LIMB], r);
 
       // secondary branches: one leaving the knee to the side, one continuing past the tip, sometimes one more
       const secs: { from: P3; az: number; el: number; len: number; w: number }[] = [
         { from: knee, az: az + (r() < 0.5 ? -1 : 1) * (0.5 + r() * 0.5), el: rad(24 + r() * 16), len: (20 + r() * 5) * s, w: 0.62 },
         { from: tip, az: az2 + (r() - 0.5) * 0.7, el: rad(4 + r() * 14), len: (18 + r() * 5) * s, w: 0.5 },
       ];
-      if (r() < 0.6) secs.push({ from: addv(knee, scl(dir2, L2 * 0.5)), az: az2 + (r() < 0.5 ? -1 : 1) * (0.4 + r() * 0.5), el: rad(12 + r() * 14), len: (15 + r() * 5) * s, w: 0.45 });
+      if (r() < 0.6) secs.push({ from: shoulder, az: az2 + (r() < 0.5 ? -1 : 1) * (0.4 + r() * 0.5), el: rad(12 + r() * 14), len: (15 + r() * 5) * s, w: 0.45 });
       knees.push(knee);
       tipsAll.push(tip);
-      bunches(knee, tip, [0.55, 1], 9.5, 12);
+      bunches(knee, tip, [0.48, 0.95], 9.5, 12);
       for (const sc of secs) {
         const e = addv(sc.from, scl(dirOf(sc.az, sc.el), sc.len));
-        limb(b, [sc.from, e], [rb * sc.w, rb * 0.08], 5, [BARK_TWIG], r);
+        const bow = mixP(sc.from, e, .52), bend = (r() - .5) * 3 * s;
+        bow[0] -= Math.sin(sc.az) * bend; bow[1] += (1.3 + r() * 1.5) * s; bow[2] += Math.cos(sc.az) * bend;
+        limb(b, [sc.from, bow, e], [rb * sc.w, rb * sc.w * .57, rb * .06], 5, [BARK_LIMB, BARK_TWIG], r);
         // one or two thin twigs (three-sided, six vertices each) leaving the branch, mostly seen from underneath
         for (let t = 0; t < 1 + (r() < 0.25 ? 1 : 0); t++) {
-          const base = mixP(sc.from, e, 0.3 + t * 0.3 + r() * 0.1);
+          const along = .3 + t * .3 + r() * .1;
+          const base = along <= .52 ? mixP(sc.from, bow, along / .52) : mixP(bow, e, (along - .52) / .48);
           const side = (r() < 0.5 ? -1 : 1) * (0.7 + r() * 0.8);
           const tw = addv(base, scl(dirOf(sc.az + side, rad(10 + r() * 40)), (8 + r() * 6) * s));
           limb(b, [base, tw], [rb * 0.2, rb * 0.04], 3, [BARK_TWIG], r);
         }
-        bunches(sc.from, e, [0.5, 1.02], 9, 12, 1);
+        bunches(sc.from, e, [0.42, 0.98], 9, 12, 1);
         const o = norm([e[0] - fork[0], 0, e[2] - fork[2]]);
-        if (r() < 0.7) tassels(e, o, 1 + (r() < 0.4 ? 1 : 0));
+        if (r() < 0.5) tassels(e, o, 1);
       }
       // the dome over the knee
-      put([knee[0], knee[1] + 8 * s, knee[2]], (11.5 + r() * 3) * s, 0.7, 0.4 + r() * 0.5);
+      put([knee[0], knee[1] + (7 + r() * 3) * s, knee[2]], (14 + r() * 3) * s, 0.88 + r() * .16, 0.4 + r() * 0.5);
     } else {
       const e1 = rad(46 + r() * 16);
       const L1 = (26 + r() * 7) * s;
       const tip = addv(start, scl(dirOf(az, e1), L1));
-      limb(b, [start, tip], [rb, rb * 0.5], 5, [BARK_LIMB], r);
+      const shoulder = mixP(start, tip, .5); shoulder[1] += 2 * s;
+      limb(b, [start, shoulder, tip], [rb, rb * .72, rb * 0.4], 5, [BARK_LIMB], r);
       bunches(start, tip, [0.55], 9, 11);
       const o = norm([tip[0] - fork[0], 0, tip[2] - fork[2]]);
-      put([tip[0] + o[0] * 2 * s, tip[1] + 3 * s, tip[2] + o[2] * 2 * s], (12 + r() * 3) * s, 0.75, 0.45 + r() * 0.5, 1);
+      put([tip[0] + o[0] * 2 * s, tip[1] + 3 * s, tip[2] + o[2] * 2 * s], (12 + r() * 3) * s, 0.95, 0.45 + r() * 0.5, 1);
     }
   }
   // fill the gaps between neighbouring limbs, so that the canopy is one umbrella and not a star of separate branches
   for (let k = 0; k < knees.length; k++) {
     const k2 = (k + 1) % knees.length;
-    const kn = mixP(knees[k]!, knees[k2]!, 0.5);
-    const tp = mixP(tipsAll[k]!, tipsAll[k2]!, 0.5);
-    put([kn[0], kn[1] + 9 * s, kn[2]], (12 + r() * 3) * s, 0.7, 0.35 + r() * 0.5, 1);
-    put([tp[0], tp[1] + 4 * s, tp[2]], (11 + r() * 3) * s, 0.65, 0.4 + r() * 0.55, 0);
+    const kn = mixP(knees[k]!, knees[k2]!, 0.32 + r() * .32);
+    const tp = mixP(tipsAll[k]!, tipsAll[k2]!, 0.35 + r() * .3);
+    put([kn[0], kn[1] + (8 + r() * 3) * s, kn[2]], (15 + r() * 3) * s, .9 + r() * .16, 0.35 + r() * 0.5, 1);
+    put([tp[0], tp[1] + (2 + r() * 5) * s, tp[2]], (10 + r() * 4) * s, .76 + r() * .3, 0.4 + r() * 0.55, 0);
     const lo = mixP(kn, tp, 0.55);
-    put([lo[0], lo[1] - 1 * s, lo[2]], (8.5 + r() * 2.5) * s, 0.75, 0.05 + r() * 0.3, 0);
+    put([lo[0], lo[1] - 2 * s, lo[2]], (8 + r() * 2.5) * s, .9, 0.05 + r() * 0.3, 0);
   }
-  // crown: fills the top of the umbrella
-  const nCrown = big ? 3 : 2;
-  const crownY = fork[1] + (big ? 37 : 30) * s;
+  // Two broad overlapping shoulders establish the canopy's large shape. Small outer
+  // bunches describe its edge, rather than every flower bunch competing as a separate ball.
+  const nCrown = 2;
+  const crownY = fork[1] + (big ? 34 : 30) * s;
   for (let i = 0; i < nCrown; i++) {
     const a = (i / nCrown) * Math.PI * 2 + r() * 1.2;
-    const d = (big ? 14 : 8) * s * (0.4 + r() * 0.6);
-    put([fork[0] + Math.cos(a) * d, crownY + (r() - 0.3) * 8 * s, fork[2] + Math.sin(a) * d], (big ? 13 + r() * 3.5 : 11 + r() * 3) * s, 0.7, 0.7 + r() * 0.3, 1);
+    const d = (big ? 12 : 8) * s * (0.4 + r() * 0.6);
+    put([fork[0] + Math.cos(a) * d, crownY + (r() - 0.35) * 10 * s, fork[2] + Math.sin(a) * d], (big ? 17 + r() * 4 : 11 + r() * 3) * s, .98 + r() * .14, 0.7 + r() * 0.3, 1);
   }
   // a darker bunch inside the crown, below the top, for depth
   if (big) put([fork[0], fork[1] + 20 * s, fork[2]], 10 * s, 0.8, 0.1 + r() * 0.2, 0);
 
   if (c.foliage) {
-    const uv = cellUv('petalsA'), fb = c.foliage.at(x, z);
+    const fb = c.foliage.at(x, z), road = roadClearance(x, z);
     const pr = treeRng(x + 19, z - 31);
     for (let i = 0; i < (big ? 14 : 5); i++) {
       const a = pr() * Math.PI * 2, distance = pr() * (big ? 60 : 33) * s;
-      const px = x + Math.cos(a) * distance, pz = z + Math.sin(a) * distance, half = (9 + pr() * 12) * s;
-      const points: [V3, V3, V3, V3] = [[px - half, 0, pz - half], [px + half, 0, pz - half], [px + half, 0, pz + half], [px - half, 0, pz + half]];
+      let px = x + Math.cos(a) * distance, pz = z + Math.sin(a) * distance;
+      let angle = a, half = (4 + pr() * 5) * s, depth = half;
+      const drift = big && i < 3 && road.road && road.d > 0 && road.d < 55;
+      if (drift) {
+        const towardX = road.px - x, towardZ = road.pz - z, length = Math.hypot(towardX, towardZ) || 1;
+        const nx = towardX / length, nz = towardZ / length, along = (pr() - .5) * 65 * s;
+        px = x + nx * Math.max(0, road.d - 4) - nz * along;
+        pz = z + nz * Math.max(0, road.d - 4) + nx * along;
+        angle = Math.atan2(nx, -nz); half = (8 + pr() * 6) * s; depth = (2 + pr() * 1.5) * s;
+      }
+      const uv = cellUv(drift ? 'petalsB' : 'petalsC');
+      const dx = Math.cos(angle) * half, dz = Math.sin(angle) * half;
+      const sx = -Math.sin(angle) * depth, sz = Math.cos(angle) * depth;
+      const points: [V3, V3, V3, V3] = [[px - dx - sx, 0, pz - dz - sz], [px + dx - sx, 0, pz + dz - sz],
+        [px + dx + sx, 0, pz + dz + sz], [px - dx + sx, 0, pz - dz + sz]];
       if (points.some(p => roadClearance(p[0], p[2]).d < -6)) continue;
       const ground = points.map(p => [p[0], heightAt(p[0], p[2]) + PETAL_Y + i * .003, p[2]] as V3) as [V3, V3, V3, V3];
       fb.card(ground, [1, 1, 1], [0, 1, 0], [[uv.u0, uv.vb], [uv.u1, uv.vb], [uv.u1, uv.vt], [uv.u0, uv.vt]]);

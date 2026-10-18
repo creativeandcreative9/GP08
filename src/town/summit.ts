@@ -1,7 +1,8 @@
 import type { Ctx } from './ctx';
+import { SURF } from '../surface';
 import { DEC1_Y } from './ctx';
 import { SUMMIT_XZ, heightAt } from './terrain';
-import { hex } from './util';
+import { hex, shade, type RGB, type V3 } from './util';
 
 export interface SummitInfo {
   /** Centre of the observation deck (world x,z) and the walking surface height. */
@@ -71,36 +72,113 @@ export function buildSummit(c: Ctx): SummitInfo {
 
   // ---- shrine: torii + small hall, facing north ----
   const sx = S.x - 38;
-  const red = hex(0xd8402a);
-  const black = hex(0x2b2b30);
+  const red = hex(0xc94932);
+  const black = hex(0x303b39);
   const tzz = S.z - 34;
+  // Lacquered wood uses the plain painted finish; red pigment must not imply brick mortar.
+  const painted = (draw: () => void): void => {
+    const previous = b.surface;
+    b.surface = SURF.paintedMetal;
+    try { draw(); } finally { b.surface = previous; }
+  };
   // torii
-  for (const ox of [-22, 22]) b.cylinder(sx + ox, tzz, y0, y0 + 50, 3.6, 3.2, 8, red, true);
-  b.box(sx - 34, sx + 34, y0 + 50, y0 + 55, tzz - 3.5, tzz + 3.5, black); // kasagi
-  b.box(sx - 31, sx + 31, y0 + 45, y0 + 48, tzz - 2.5, tzz + 2.5, red); // shimaki
-  b.box(sx - 26, sx + 26, y0 + 36, y0 + 40, tzz - 2, tzz + 2, red); // nuki
-  b.box(sx - 3, sx + 3, y0 + 40, y0 + 48, tzz - 2, tzz + 2, hex(0xe8c76a));
+  for (const ox of [-22, 22]) {
+    // Preserve the original taper above the black foot without two intersecting cylinder skins.
+    painted(() => b.cylinder(sx + ox, tzz, y0 + 7.7, y0 + 50, 3.6 - .4 * 7.7 / 50, 3.2, 12, red, true));
+    b.cylinder(sx + ox, tzz, y0, y0 + 1.2, 3.6, 3.6, 12, hex(0x62665e));
+    painted(() => {
+      b.cylinder(sx + ox, tzz, y0 + 1.2, y0 + 7.2, 3.6, 3.52, 12, black);
+      b.cylinder(sx + ox, tzz, y0 + 7.2, y0 + 7.7, 3.56, 3.56, 12, shade(black, 1.25));
+    });
+  }
+  // The ends turn gently upwards within the original 55-unit height envelope.
+  const curvedBeam = (half: number, base: number, rise: number, thick: number, depth: number, color: RGB): void => {
+    const edge = (x: number): number => y0 + base + rise * (x / half) ** 2;
+    for (let i = 0; i < 12; i++) {
+      const a = -half + 2 * half * i / 12, z = -half + 2 * half * (i + 1) / 12;
+      const ya = edge(a), yz = edge(z), x0 = sx + a, x1 = sx + z;
+      b.quad([x0, ya + thick, tzz - depth], [x1, yz + thick, tzz - depth], [x1, yz + thick, tzz + depth], [x0, ya + thick, tzz + depth], shade(color, 1.1), [0, 1, 0]);
+      b.quad([x0, ya, tzz - depth], [x1, yz, tzz - depth], [x1, yz, tzz + depth], [x0, ya, tzz + depth], shade(color, .72), [0, -1, 0]);
+      for (const side of [-1, 1]) b.quad([x0, ya, tzz + side * depth], [x1, yz, tzz + side * depth], [x1, yz + thick, tzz + side * depth], [x0, ya + thick, tzz + side * depth], color, [0, 0, side]);
+    }
+    for (const side of [-1, 1]) b.quad([sx + side * half, edge(half), tzz - depth], [sx + side * half, edge(half), tzz + depth], [sx + side * half, edge(half) + thick, tzz + depth], [sx + side * half, edge(half) + thick, tzz - depth], shade(color, .9), [side, 0, 0]);
+  };
+  painted(() => {
+    curvedBeam(34, 48.5, 2.4, 4.1, 3.5, black);
+    curvedBeam(31, 44.8, 1.8, 3, 2.5, red);
+    b.box(sx - 26, sx + 26, y0 + 36, y0 + 40, tzz - 2, tzz + 2, red); // nuki
+  });
+  const gilt = hex(0xc4a76b);
+  painted(() => {
+    b.box(sx - 3.3, sx + 3.3, y0 + 39.5, y0 + 47.8, tzz - 2.15, tzz + 2.4, gilt);
+    b.box(sx - 2.65, sx + 2.65, y0 + 40.1, y0 + 47.2, tzz + 2.4, tzz + 2.6, hex(0x30453f));
+  });
+  // A small five-petal crest belongs to this unnamed shrine; no invented lettering.
+  for (let petal = 0; petal < 5; petal++) {
+    const angle = petal * Math.PI * 2 / 5, cx = sx + Math.cos(angle) * .85, cy = y0 + 44 + Math.sin(angle) * .85;
+    for (let i = 0; i < 8; i++) {
+      const a = i * Math.PI / 4, z = (i + 1) * Math.PI / 4;
+      painted(() => b.tri([cx, cy, tzz + 2.65], [cx + Math.cos(a) * .7, cy + Math.sin(a) * .7, tzz + 2.65], [cx + Math.cos(z) * .7, cy + Math.sin(z) * .7, tzz + 2.65], gilt, [0, 0, 1]));
+    }
+  }
+  const ropeY = (x: number): number => y0 + 31.5 + 2.2 * (x / 18) ** 2;
+  for (let i = 0; i < 12; i++) {
+    const a = -18 + i * 3, z = a + 3, ya = ropeY(a), yz = ropeY(z);
+    const length = Math.hypot(3, yz - ya), nx = -(yz - ya) / length, ny = 3 / length;
+    const ring = (x: number, y: number, t: number): V3 => [sx + x + nx * Math.cos(t) * .42, y + ny * Math.cos(t) * .42, tzz + 2.6 + Math.sin(t) * .42];
+    for (let j = 0; j < 6; j++) {
+      const t0 = j * Math.PI / 3, t1 = (j + 1) * Math.PI / 3;
+      b.quad(ring(a, ya, t0), ring(z, yz, t0), ring(z, yz, t1), ring(a, ya, t1), hex(i % 2 ? 0xb69c6a : 0xcbb783), [nx * Math.cos((t0 + t1) / 2), ny * Math.cos((t0 + t1) / 2), Math.sin((t0 + t1) / 2)]);
+    }
+  }
+  for (const x of [-12, -4, 4, 12]) {
+    const y = ropeY(x);
+    for (let i = 0; i < 4; i++) {
+      const shift = i % 2 ? -.7 : .4, next = i % 2 ? .4 : -.7;
+      b.quad([sx + x + shift, y - i * 1.15, tzz + 2.65], [sx + x + shift + 1.15, y - i * 1.15, tzz + 2.65], [sx + x + next + 1.15, y - (i + 1) * 1.15, tzz + 2.8], [sx + x + next, y - (i + 1) * 1.15, tzz + 2.8], hex(i % 2 ? 0xe1ddcc : 0xf6f1e5), [0, 0, 1]);
+    }
+  }
   // stone path to the hall
   c.dec1.quad([sx - 8, y0 + DEC1_Y + 1.6, tzz - 3], [sx + 8, y0 + DEC1_Y + 1.6, tzz - 3], [sx + 8, y0 + DEC1_Y + 1.6, S.z - 62], [sx - 8, y0 + DEC1_Y + 1.6, S.z - 62], hex(0xb9b4a8), [0, 1, 0]);
   // hall
   const hz = S.z - 80;
   b.box(sx - 18, sx + 18, y0, y0 + 5, hz - 14, hz + 14, hex(0x9d9a92)); // stone base
   b.box(sx - 15, sx + 15, y0 + 5, y0 + 33, hz - 11, hz + 11, hex(0xc9a47a));
-  for (const ox of [-15, -5, 5, 15]) b.cylinder(sx + ox, hz + 11, y0 + 5, y0 + 33, 1.6, 1.6, 6, red, false);
+  painted(() => {
+    for (const ox of [-15, -5, 5, 15]) b.cylinder(sx + ox, hz + 11, y0 + 5, y0 + 33, 1.6, 1.6, 6, red, false);
+  });
   b.box(sx - 8, sx + 8, y0 + 5, y0 + 26, hz + 11.2, hz + 11.8, hex(0x3b2a22)); // door
+  const cedar = hex(0x9f7953);
+  for (let x = -7.2; x <= 7.2; x += 2.4) b.box(sx + x - .28, sx + x + .28, y0 + 7, y0 + 25, hz + 11.8, hz + 12.3, cedar);
+  for (const y of [7, 15, 25]) b.box(sx - 8, sx + 8, y0 + y, y0 + y + .6, hz + 11.8, hz + 12.3, cedar);
+  b.box(sx - 16.5, sx + 16.5, y0 + 27.7, y0 + 30.2, hz + 10.5, hz + 13, hex(0x75583c));
+  b.box(sx - 19, sx + 19, y0 + 31.5, y0 + 32.6, hz - 14, hz + 14, hex(0x554b3e));
+  for (const x of [-13, -7, 0, 7, 13]) b.box(sx + x - .6, sx + x + .6, y0 + 30.4, y0 + 32.6, hz + 10.5, hz + 15, cedar);
   b.gable(sx - 15, sx + 15, hz - 11, hz + 11, y0 + 33, 17, 'z', 7, hex(0x4a4f58), hex(0xc9a47a));
   // offering box + rope-ish details
   b.box(sx - 8, sx + 8, y0 + 5, y0 + 11, hz + 17, hz + 22, hex(0x7d5a38));
-  b.box(sx - 7, sx + 7, y0 + 11, y0 + 12, hz + 16.5, hz + 22.5, hex(0x5d4228));
+  b.box(sx - 7, sx + 7, y0 + 10.8, y0 + 11.2, hz + 16.5, hz + 22.5, hex(0x332d24));
+  for (let x = -7; x < 7; x += 2) b.box(sx + x, sx + x + .85, y0 + 11.2, y0 + 12, hz + 16.5, hz + 22.5, cedar);
+  b.box(sx - 8, sx + 8, y0 + 5.7, y0 + 6.4, hz + 22, hz + 22.3, cedar);
   c.obstacles.push({ minX: sx - 18, maxX: sx + 18, minZ: hz - 14, maxZ: hz + 24 });
   // stone lanterns beside the path
   for (const ox of [-14, 14]) {
     const lz = S.z - 56;
     b.box(sx + ox - 3, sx + ox + 3, y0, y0 + 3, lz - 3, lz + 3, hex(0xa9a69e));
     b.cylinder(sx + ox, lz, y0 + 3, y0 + 14, 1.8, 1.8, 6, hex(0xb8b5ac));
-    b.box(sx + ox - 4, sx + ox + 4, y0 + 14, y0 + 20, lz - 4, lz + 4, hex(0xb8b5ac));
-    b.box(sx + ox - 2.5, sx + ox + 2.5, y0 + 15.5, y0 + 18.5, lz - 4.2, lz + 4.2, hex(0xffe9a0));
-    b.box(sx + ox - 6, sx + ox + 6, y0 + 20, y0 + 23, lz - 6, lz + 6, hex(0x9a978f));
+    const lx = sx + ox, stone = hex(0xaaa99e);
+    b.box(lx - 4, lx + 4, y0 + 14, y0 + 14.8, lz - 4, lz + 4, stone);
+    b.box(lx - 2.6, lx + 2.6, y0 + 14.8, y0 + 19.5, lz - 2.6, lz + 2.6, hex(0x555b51));
+    for (const x of [-3.3, 3.3]) for (const z of [-3.3, 3.3]) b.box(lx + x - .7, lx + x + .7, y0 + 14.8, y0 + 20, lz + z - .7, lz + z + .7, stone);
+    b.box(lx - .55, lx + .55, y0 + 15.3, y0 + 18.7, lz - 2.9, lz + 2.9, hex(0xc7b991));
+    b.box(lx - 4, lx + 4, y0 + 19.4, y0 + 20, lz - 4, lz + 4, stone);
+    // A low hipped stone cap retains the original extent and maximum height.
+    for (const side of [-1, 1]) {
+      b.quad([lx - 6, y0 + 20.5, lz + side * 6], [lx + 6, y0 + 20.5, lz + side * 6], [lx + 1.3, y0 + 22.5, lz + side * 1.3], [lx - 1.3, y0 + 22.5, lz + side * 1.3], stone, [0, 1, side]);
+      b.quad([lx + side * 6, y0 + 20.5, lz - 6], [lx + side * 6, y0 + 20.5, lz + 6], [lx + side * 1.3, y0 + 22.5, lz + 1.3], [lx + side * 1.3, y0 + 22.5, lz - 1.3], stone, [side, 1, 0]);
+    }
+    b.box(lx - 6, lx + 6, y0 + 20, y0 + 20.5, lz - 6, lz + 6, shade(stone, .87));
+    b.cylinder(lx, lz, y0 + 22.5, y0 + 23, 1.3, .5, 8, stone);
   }
   return { deck: { x: dx, z: dz, y: top } };
 }

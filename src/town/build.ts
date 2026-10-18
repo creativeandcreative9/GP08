@@ -136,6 +136,7 @@ export function buildTown(scene: Scene): Town {
 
   const mainMat = vertexColourMaterial(scene, 'townMat');
   const d0 = vertexColourMaterial(scene, 'decal0', -1, -2);
+  d0.diffuseColor.setAll(.88);
   const d1 = vertexColourMaterial(scene, 'decal1', -2, -4);
   const d2 = vertexColourMaterial(scene, 'decal2', -3, -6);
   const d3 = vertexColourMaterial(scene, 'decal3', -4, -8);

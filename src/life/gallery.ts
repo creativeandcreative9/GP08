@@ -44,9 +44,17 @@ function galleryCamera(scene: Scene, target: Vector3, alpha: number, beta: numbe
 }
 
 export function carGallery(scene: Scene, rendering: Rendering, rowInView: number, view: number): void {
-  const mat = lifeMaterial(scene);
+  const mat = lifeMaterial(scene, true);
   const Y = GALLERY_Y;
   galleryGround(scene);
+  const views: [number, number, number][] = [
+    [Math.PI / 2 - 0.7, Math.PI / 2 - 0.2, 100],
+    [-Math.PI / 2 - 0.7, Math.PI / 2 - 0.2, 100],
+    [0, Math.PI / 2 - 0.1, 110],
+    [Math.PI / 2, Math.PI / 2 - 0.1, 100],
+    [-Math.PI / 2, Math.PI / 2 - 0.1, 100],
+  ];
+  const v = views[view % views.length]!;
   const kind = CAR_KINDS[rowInView % CAR_KINDS.length]!;
   const wb = new MeshBatch();
   buildWheel(wb);
@@ -59,8 +67,12 @@ export function carGallery(scene: Scene, rendering: Rendering, rowInView: number
     const inst = new Instances(`gal_car_${kind.id}_${i}`, b, mat, scene, 1);
     verts += inst.vertexCount;
     rendering.addShadowCaster(inst.mesh);
-    const x = i === 0 ? 0 : i * 60 - 60;
-    const z = i === 0 ? 0 : 55;
+    // Keep alternative colours behind and beside the inspected car from every
+    // gallery angle; the old fixed row obscured its front with another car.
+    const lateral = i === 0 ? 0 : i === 1 ? -68 : 68;
+    const back = i === 0 ? 0 : 90;
+    const x = -Math.cos(v[0]) * back - Math.sin(v[0]) * lateral;
+    const z = -Math.sin(v[0]) * back + Math.cos(v[0]) * lateral;
     setPose(inst.data, 0, x, Y, z, 0);
     inst.upload();
     let w = i * 4;
@@ -74,14 +86,6 @@ export function carGallery(scene: Scene, rendering: Rendering, rowInView: number
   wheels.upload();
   console.info(`[life] gallery ${kind.id}: ${verts} vertices (${kind.palettes.length} colourways + wheel)`);
   // the camera orbits the car: alpha = pi/2 puts it in front (+z), -pi/2 behind, 0 on the car's right side
-  const views: [number, number, number][] = [
-    [Math.PI / 2 - 0.7, Math.PI / 2 - 0.2, 100],
-    [-Math.PI / 2 - 0.7, Math.PI / 2 - 0.2, 100],
-    [0, Math.PI / 2 - 0.1, 110],
-    [Math.PI / 2, Math.PI / 2 - 0.1, 100],
-    [-Math.PI / 2, Math.PI / 2 - 0.1, 100],
-  ];
-  const v = views[view % views.length]!;
   galleryCamera(scene, new Vector3(0, Y + 8, 0), v[0], v[1], v[2]);
 }
 

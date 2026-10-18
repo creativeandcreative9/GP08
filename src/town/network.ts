@@ -9,6 +9,7 @@ import { heightAt } from './terrain';
 import { hex, type RGB, type V3 } from './util';
 import { PLAZA_BENCHES } from './benches';
 import { plantCards } from './greenery';
+import { canopyStructure, platformBench, platformCoping, platformWayfinding, railProfile, sleeperFasteners } from './platform-detail';
 
 const ASPHALT = hex(0x62656f);
 const SIDEWALK = hex(0xc9c6bd);
@@ -156,6 +157,9 @@ export function buildRailway(c: Ctx): void {
       SLEEPER,
       [0, 1, 0],
     );
+    if (q.x > -720 && q.x < 760 && Math.abs(q.z - PLATFORM.trackZ) < 80) {
+      sleeperFasteners(c.main.at(q.x, q.z), q.x, y + .05, q.z, q.nx, q.nz);
+    }
   }
   // rails
   const rs = samplePolyline(railW, 30);
@@ -167,7 +171,9 @@ export function buildRailway(c: Ctx): void {
       if (roadClearance(m.x, m.z).d < 3) continue;
       const ya = heightAt(a.x, a.z) + 0.55;
       const yb = heightAt(b.x, b.z) + 0.55;
-      beam(c.main.at(m.x, m.z), [a.x + a.nx * off, ya + 1.2, a.z + a.nz * off], [b.x + b.nx * off, yb + 1.2, b.z + b.nz * off], 1.9, 2.4, RAIL);
+      const start: V3 = [a.x + a.nx * off, ya + 1.2, a.z + a.nz * off], end: V3 = [b.x + b.nx * off, yb + 1.2, b.z + b.nz * off];
+      if (m.x > -720 && m.x < 760 && Math.abs(m.z - PLATFORM.trackZ) < 80) railProfile(c.main.at(m.x, m.z), start, end);
+      else beam(c.main.at(m.x, m.z), start, end, 1.9, 2.4, RAIL);
     }
   }
   // buffer stop at the east end
@@ -264,6 +270,7 @@ export function buildStation(c: Ctx): void {
   // yellow safety lines (real geometry: the platform tops are above the decal layers)
   b.box(x0, x1, h, h + 0.35, 770, 774, YELLOW);
   b.box(x0, x1, h, h + 0.35, 834, 838, YELLOW);
+  platformCoping(b);
 
   // station building (south platform, entrance facing the plaza = south): see station.ts
   buildStationBuilding(c, b);
@@ -275,17 +282,17 @@ export function buildStation(c: Ctx): void {
     for (let x = xa + 20; x <= xb - 10; x += 100) {
       b.cylinder(x, zc + depth / 2 - 6, h, h + 44, 1.6, 1.6, 6, hex(0x7d8088));
     }
+    canopyStructure(b, zc, depth, xa, xb);
   };
   canopy(744, 64, -330, 330);
   canopy(900, 110, -330, 330);
+  platformWayfinding(c, b);
   // benches
   for (const x of [-300, -120, 140, 360, 500]) {
-    b.box(x - 12, x + 12, h + 4, h + 6, 750, 757, hex(0x7b5a3c));
-    b.box(x - 12, x + 12, h + 6, h + 14, 756, 758, hex(0x7b5a3c));
+    platformBench(b, x, 750);
   }
   for (const x of [-250, 20, 260]) {
-    b.box(x - 12, x + 12, h + 4, h + 6, 905, 912, hex(0x7b5a3c));
-    b.box(x - 12, x + 12, h + 6, h + 14, 911, 913, hex(0x7b5a3c));
+    platformBench(b, x, 905);
   }
   // station name poles on both platforms, and the train standing at the platform
   buildNamePoles(c, b);
@@ -341,10 +348,33 @@ export function buildPlaza(c: Ctx): void {
   // benches along the north-south path and lamps
   for (const { x, z } of PLAZA_BENCHES) {
     const dir = x < 0 ? -1 : 1;
-    b.box(x - 3, x + 3, 5, 7, z - 11, z + 11, hex(0x8a5f3a));
-    b.box(x + dir * 2, x + dir * 4, 7, 15, z - 11, z + 11, hex(0x8a5f3a));
-    b.box(x - 2, x - 1, 0, 5, z - 9, z - 8, hex(0x444444));
-    b.box(x - 2, x - 1, 0, 5, z + 8, z + 9, hex(0x444444));
+    const oldSurface = b.surface, oldAxis = b.axis;
+    const timber = [hex(0x9d7851), hex(0xa48058), hex(0x95704a)], steel = hex(0x303a3c);
+    const backX = x + dir * 3.2;
+    b.surface = 0; b.axis = 0; // SURF.plain: timber grain follows each box's long axis.
+    // Three thin seat planks with real gaps; the seating surface stays exactly at y=7.
+    for (let i = 0; i < 3; i++) {
+      const left = x - 3 + i * 2.1;
+      b.box(left, left + 1.8, 6.35, 7, z - 11, z + 11, timber[i]!, { bottom: true });
+    }
+    // The back keeps its original facing and height while daylight passes between four boards.
+    for (let i = 0; i < 4; i++) {
+      const low = 7.95 + i * 1.9;
+      b.box(backX - .36, backX + .36, low, low + 1.35, z - 11, z + 11, timber[i % 3]!, { bottom: true });
+    }
+    b.surface = 100; // SURF.paintedMetal: the iron must not inherit a wood pattern.
+    for (const dz of [-8.4, 8.4]) {
+      for (const dx of [-2.2, 2.2]) b.box(x + dx - .27, x + dx + .27, 0, 6.35, z + dz - .27, z + dz + .27, steel, { bottom: true });
+      b.box(x + Math.min(-2.7, dir * 3.9), x + Math.max(2.7, dir * 3.9), 5.9, 6.35, z + dz - .28, z + dz + .28, steel, { bottom: true });
+      const supportX = backX + dir * .47;
+      b.box(supportX - .22, supportX + .22, 5.9, 14.8, z + dz - .25, z + dz + .25, steel, { bottom: true });
+      for (let i = 0; i < 4; i++) {
+        const y = 8.625 + i * 1.9, frontX = backX - dir * .38;
+        b.quad([frontX, y - .12, z + dz - .12], [frontX, y + .12, z + dz - .12],
+          [frontX, y + .12, z + dz + .12], [frontX, y - .12, z + dz + .12], hex(0x78807d), [-dir, 0, 0]);
+      }
+    }
+    b.surface = oldSurface; b.axis = oldAxis;
   }
   for (const z of [-360, -240, 240, 360, 480]) {
     for (const x of [-40, 40]) {

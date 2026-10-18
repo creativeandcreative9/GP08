@@ -98,13 +98,22 @@ test('a player sits, enjoys a snack, uses the map and journal, stands and resume
   await page.goto('/?model=fubuki&gfx=low');
   await ready(page);
   const spot = await page.evaluate(() => {
-    const gameplay = window.__gp08.gameplay!, people = gameplay.contacts();
+    const gameplay = window.__gp08.gameplay! as any, people: Contact[] = gameplay.contacts();
     const at = window.__gp08.player!.position;
-    const bench = [...gameplay.restSpots()].sort((a, b) => Math.hypot(a.x - at.x, a.z - at.z) - Math.hypot(b.x - at.x, b.z - at.z))
-      .find(b => people.every(p => p.kind !== 'resident' || Math.hypot(p.x - b.x, p.z - b.z) > 24 && Math.hypot(p.x - b.exit.x, p.z - b.exit.z) > 24));
-    if (!bench) throw new Error('No unoccupied plaza bench with a clear approach');
-    window.__gp08.player!.position.set(bench.exit.x, bench.exit.y, bench.exit.z);
-    return bench;
+    const candidates = [...gameplay.restSpots()]
+      .sort((a, b) => Math.hypot(a.x - at.x, a.z - at.z) - Math.hypot(b.x - at.x, b.z - at.z))
+      .filter(b => people.every(p => p.kind !== 'resident' || Math.hypot(p.x - b.x, p.z - b.z) > 24 && Math.hypot(p.x - b.exit.x, p.z - b.exit.z) > 24));
+    for (const bench of candidates) {
+      window.__gp08.player!.position.set(bench.exit.x, bench.exit.y, bench.exit.z);
+      gameplay.updateNearby();
+      if (document.querySelector('.life-interact')?.textContent?.includes('ベンチに座る')) return bench;
+    }
+    const details = candidates.map(b => {
+      const nearby = people.filter(p => p.kind === 'resident' && Math.hypot(p.x - b.exit.x, p.z - b.exit.z) < 30)
+        .map(p => `${p.id} d=${Math.hypot(p.x - b.exit.x, p.z - b.exit.z).toFixed(1)}`);
+      return `${b.id} exit=(${b.exit.x.toFixed(1)},${b.exit.z.toFixed(1)}): ${nearby.join(', ') || 'resident-distance filter passed; actual seat interaction unavailable'}`;
+    });
+    throw new Error(`No unoccupied plaza bench with an actual seat interaction. Candidates: ${details.join('; ') || 'none'}`);
   });
   await expect(page.locator('.life-interact')).toContainText('ベンチに座る', { timeout: 30000 });
   const standing = await page.evaluate(() => window.__gp08.player!.root.metadata.skeleton.bones.find((b: Bone) => b.name === 'センター').position.y);

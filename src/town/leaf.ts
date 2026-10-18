@@ -48,7 +48,7 @@ export function foliageCluster(b: MeshBatch, x: number, y: number, z: number, ra
 
 /** Bowed petals with spherical lighting overlap into a broad canopy instead of intersecting flat flags. */
 function blossomCrown(b: MeshBatch, x: number, y: number, z: number, r: number, flat: number, angle: number, uv: readonly (readonly [number, number])[]): void {
-  const width = r * (flat > 1.2 ? .85 : 1.48), height = r * Math.min(flat, .8);
+  const width = r * (flat > 1.2 ? .85 : 1.48), height = r * Math.min(flat, 1.16);
   for (let plane = 0; plane < 3; plane++) {
     const a = angle + plane * Math.PI / 3, dx = Math.cos(a), dz = Math.sin(a);
     const at = (u: number, v: number): V3 => {

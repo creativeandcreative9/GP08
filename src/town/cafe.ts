@@ -6,25 +6,32 @@ import { hex, shade, type Rect, type RGB } from './util';
 
 const CREAM = hex(0xf3e7cc);
 const CREAM_SIDE = hex(0xe5d7b8);
-const WOOD = hex(0x8c5c36);
-const WOOD_DARK = hex(0x5a3820);
-const WOOD_LIGHT = hex(0xcb9c64);
-const BRICK = hex(0xa4513a);
+const WOOD = hex(0x876b50);
+const WOOD_DARK = hex(0x574435);
+const WOOD_LIGHT = hex(0xb69b77);
+const IRON = hex(0x414f49);
+const BRICK = hex(0x9d7164);
 const ROOF = hex(0x8b4637);
 const RED = hex(0xc8281e);
-const AWNING = hex(0x8b3445);
+const AWNING = hex(0x78404d);
 const SHUTTER = hex(0x587c5c);
 const TERRACOTTA = hex(0xc0683f);
 const FLOWERS: RGB[] = [hex(0xf29bb8), hex(0xf6d94a), hex(0xfaf6ee), hex(0xe9604f), hex(0xb89ae0), hex(0xf29bb8)];
 
 function chair(k: Kit, u: number, v: number, y: number, towards: 1 | -1): void {
   // `towards`: direction of the table from the chair along v; the back is on the far side
-  k.box(u - 2.8, u + 2.8, y + 5, y + 6, v - 2.8, v + 2.8, WOOD_LIGHT);
+  k.box(u - 2.8, u + 2.8, y + 5, y + 5.5, v - 2.8, v + 2.8, WOOD_LIGHT);
   const bv = towards > 0 ? v - 2.8 : v + 2;
-  for (const du of [-2.2, 2.2]) k.box(u + du - 0.4, u + du + 0.4, y + 6, y + 12.5, bv, bv + 0.8, WOOD); // back posts
-  k.box(u - 2.8, u + 2.8, y + 11, y + 12.5, bv, bv + 0.8, WOOD);
-  k.box(u - 2.8, u + 2.8, y + 8.2, y + 9, bv, bv + 0.8, WOOD);
-  for (const dv of [-2.2, 2.2]) for (const du of [-2.2, 2.2]) k.box(u + du - 0.4, u + du + 0.4, y, y + 5, v + dv - 0.4, v + dv + 0.4, WOOD);
+  for (const du of [-2.4, 2.4]) k.cyl(u + du, bv + .25, y + 5.5, y + 10.8, .22, .22, 6, IRON);
+  // A gently arched bistro back replaces the chunky rectangular timber frame.
+  for (let i = 0; i < 6; i++) {
+    const a = -2.4 + i * .8, b = a + .8;
+    const ya = y + 10.8 + Math.sqrt(Math.max(0, 1 - (a / 2.4) ** 2)) * 2;
+    const yb = y + 10.8 + Math.sqrt(Math.max(0, 1 - (b / 2.4) ** 2)) * 2;
+    k.quad([u + a, ya, bv + .25], [u + b, yb, bv + .25], [u + b, yb + .36, bv + .25], [u + a, ya + .36, bv + .25], IRON, [0, 0, 1]);
+  }
+  k.box(u - 2.4, u + 2.4, y + 8.3, y + 8.7, bv, bv + .5, IRON);
+  for (const dv of [-2.2, 2.2]) for (const du of [-2.2, 2.2]) k.cyl(u + du, v + dv, y, y + 5, .24, .24, 6, IRON);
 }
 
 /** Original ceramic cup, open coffee surface, saucer and a handle with a real opening. */
@@ -42,9 +49,9 @@ function coffeeCup(k: Kit, u: number, v: number, y: number, inside = false): voi
 }
 
 function table(k: Kit, u: number, v: number, y: number, seed: number): void {
-  k.cyl(u, v, y + 8.4, y + 9.2, 5.6, 5.6, 10, WOOD_LIGHT);
-  k.cyl(u, v, y, y + 8.4, 0.7, 0.7, 5, WOOD_DARK);
-  k.cyl(u, v, y, y + 0.8, 2.6, 2.6, 8, WOOD_DARK);
+  k.cyl(u, v, y + 8.65, y + 9.2, 5.6, 5.6, 16, WOOD_LIGHT);
+  k.cyl(u, v, y, y + 8.65, .46, .46, 8, IRON);
+  k.cyl(u, v, y, y + .55, 2.6, 2.6, 12, IRON);
   k.cyl(u + 1, v, y + 9.2, y + 11.2, 0.55, 0.4, 5, hex(0xe8e3d6)); // little vase
   k.blob(u + 1, y + 12, v, 1.2, 1, 1.2, FLOWERS[seed % FLOWERS.length]!, 0.1, seed);
   coffeeCup(k, u - 2, v + .6, y + 9.2);
@@ -192,13 +199,16 @@ export function addCafe(c: Ctx, rect: Rect, f: Frame, W: number, D: number): voi
   const rf = D - T + 0.6;
   const cl = GF - 1.5;
   k.th(k.uv('floor:wood'), -rU, rU, rb, rf, FL + 0.02, true, [1.1, 1.02, 0.9]);
-  k.ihz(-rU, rU, rb, rf, cl, false, hex(0xf4e6c8));
-  k.ifa(-rU, rU, FL, cl, rb, 1, hex(0xeed6ac));
+  k.ihz(-rU, rU, rb, rf, cl, false, hex(0xded4be));
+  k.ifa(-rU, rU, FL, cl, rb, 1, hex(0xd9c7aa));
   k.ifa(-rU, rU, FL, 21, rb + 0.08, 1, hex(0x7e5434)); // wainscot
   k.isd(rb, rf, FL, cl, -rU, 1, hex(0xeed6ac));
   k.isd(rb, rf, FL, cl, rU, -1, hex(0xeed6ac));
   k.isd(rb, rf, FL, 21, -rU + 0.08, 1, hex(0x7e5434));
-  k.tf(k.uv('in:bottles'), -52, 52, 24, 48, rb + 0.12, 1, [1.1, 1.02, 0.92]);
+  k.tf(k.uv('in:bottles'), -52, 52, 24, 48, rb + 0.12, 1, [.94, .91, .85]);
+  // Projecting shelf edges provide parallax through the glass, without filling the room with props.
+  for (const y of [24, 32, 40, 48]) k.ibox(-53, 53, y - .55, y, rb + .3, rb + 3.4, WOOD, 'TFLR');
+  for (const u of [-53, 0, 53]) k.ibox(u - .35, u + .35, 23.5, 48, rb + .3, rb + 2.7, WOOD_DARK, 'TFLR');
   k.ts(k.uv('chalk:cafe'), -24, -3, 22, 49, -rU + 0.2, 1);
   k.ts(k.uv('p:coffee'), 26, 38, 26, 42, -rU + 0.2, 1);
   for (const u of [-40, -6, 28]) {
@@ -237,9 +247,27 @@ export function addCafe(c: Ctx, rect: Rect, f: Frame, W: number, D: number): voi
 
   // ---- the raised deck, steps, railing --------------------------------------------------------------------------
   const dw = W + 8;
-  k.box(-dw, dw, 0, P, D, D + DK, WOOD_DARK);
-  k.th(k.uv('deck'), -dw, dw, D, D + DK, P + 0.03, true);
-  k.fa(-dw, dw, 0.4, P, D + DK + 0.02, 1, WOOD);
+  // Recessed footing, three courses of fascia, and real narrow floor boards: no stretched picture.
+  k.box(-dw + .6, dw - .6, 0, P - .5, D, D + DK - .6, hex(0x6f604d));
+  const boards = Math.round(dw * 2 / 2.6), boardWidth = dw * 2 / boards;
+  for (let i = 0; i < boards; i++) {
+    const u = -dw + i * boardWidth, color = shade(WOOD_LIGHT, 1 + .04 * Math.sin(i * 2.17));
+    k.box(u + .025, u + boardWidth - .025, P - .5, P + .03, D, D + DK, color);
+  }
+  for (let row = 0; row < 3; row++) {
+    const ya = .6 + row * (P - 1.1) / 3, yb = .6 + (row + 1) * (P - 1.1) / 3 - .05;
+    for (let i = 0, start = -dw - (row % 2) * 15; start < dw; start += 30, i++) {
+      const a = Math.max(-dw, start) + .025, z = Math.min(dw, start + 30) - .025;
+      k.box(a, z, ya, yb, D + DK - .5, D + DK, shade(WOOD, 1 + .035 * Math.sin(i * 2.1 + row)));
+    }
+    for (const side of [-1, 1]) {
+      const a = side < 0 ? -dw : dw - .5;
+      for (let i = 0, start = D - (row % 2) * 12; start < D + DK; start += 24, i++) {
+        const v0 = Math.max(D, start) + .025, v1 = Math.min(D + DK, start + 24) - .025;
+        k.box(a, a + .5, ya, yb, v0, v1, shade(WOOD, 1 + .035 * Math.sin(i * 2.1 + row)));
+      }
+    }
+  }
   k.box(-22, 22, 0, 3, D + DK, D + DK + 6, WOOD_LIGHT);
   k.box(-22, 22, 3, 3.5, D + DK - 0.4, D + DK + 6.4, hex(0xe0b57c));
   const rail = (u0: number, u1: number, v0: number, v1: number): void => {
@@ -248,14 +276,14 @@ export function addCafe(c: Ctx, rect: Rect, f: Frame, W: number, D: number): voi
     for (let i = 0; i <= n; i++) {
       const u = u0 + ((u1 - u0) * i) / n;
       const v = v0 + ((v1 - v0) * i) / n;
-      k.box(u - 0.55, u + 0.55, P, P + 6.5, v - 0.55, v + 0.55, WOOD);
+      k.cyl(u, v, P, P + 6.5, .28, .28, 6, IRON);
     }
     if (alongU) {
-      k.box(Math.min(u0, u1), Math.max(u0, u1), P + 5.7, P + 6.5, v0 - 0.45, v0 + 0.45, WOOD_LIGHT);
-      k.box(Math.min(u0, u1), Math.max(u0, u1), P + 2.7, P + 3.2, v0 - 0.3, v0 + 0.3, WOOD);
+      k.box(Math.min(u0, u1), Math.max(u0, u1), P + 6.05, P + 6.5, v0 - .34, v0 + .34, WOOD);
+      k.box(Math.min(u0, u1), Math.max(u0, u1), P + 2.8, P + 3.1, v0 - .17, v0 + .17, IRON);
     } else {
-      k.box(u0 - 0.45, u0 + 0.45, P + 5.7, P + 6.5, Math.min(v0, v1), Math.max(v0, v1), WOOD_LIGHT);
-      k.box(u0 - 0.3, u0 + 0.3, P + 2.7, P + 3.2, Math.min(v0, v1), Math.max(v0, v1), WOOD);
+      k.box(u0 - .34, u0 + .34, P + 6.05, P + 6.5, Math.min(v0, v1), Math.max(v0, v1), WOOD);
+      k.box(u0 - .17, u0 + .17, P + 2.8, P + 3.1, Math.min(v0, v1), Math.max(v0, v1), IRON);
     }
   };
   rail(-dw + 1, -23, D + DK - 1, D + DK - 1);
@@ -272,10 +300,33 @@ export function addCafe(c: Ctx, rect: Rect, f: Frame, W: number, D: number): voi
   const pl1 = 66;
   const pv0 = D + DK - 11;
   const pv1 = D + DK - 3;
-  k.box(pl0, pl1, P, P + 6, pv0, pv1, BRICK);
-  k.tf(k.uv('brick'), pl0, pl1, P + 0.4, P + 5.6, pv1 + 0.05, 1);
-  k.ts(k.uv('brick'), pv0, pv1, P + 0.4, P + 5.6, pl0 - 0.05, -1);
-  k.ts(k.uv('brick'), pv0, pv1, P + 0.4, P + 5.6, pl1 + 0.05, 1);
+  // Muted, sunlit running bond: the old bright atlas made the mortar dominate the facade.
+  // Keep a shallow mortar recess: deeper grooves expose dark brick sides as wedges at grazing views.
+  // The backing overlaps the brick interiors, while its visible faces stay well behind the brick fronts.
+  const brickDepth = .36, mortarInset = .16;
+  k.box(pl0 + mortarInset, pl1 - mortarInset, P, P + 5.65, pv0 + mortarInset, pv1 - mortarInset, hex(0x89786a));
+  for (let row = 0; row < 5; row++) {
+    const ya = P + .08 + row * 1.1, yb = ya + 1.02;
+    for (let i = 0, start = pl0 - (row % 2) * 1.6; start < pl1; start += 3.2, i++) {
+      const a = Math.max(pl0, start) + .045, z = Math.min(pl1, start + 3.2) - .045;
+      if (z <= a) continue; // decimal course lengths can otherwise leave an inverted terminal sliver
+      const color = shade(BRICK, 1 + .045 * Math.sin(i * 2.4 + row * .8));
+      k.box(a, z, ya, yb, pv1 - brickDepth, pv1, color);
+      k.box(a, z, ya, yb, pv0, pv0 + brickDepth, color);
+    }
+    for (const side of [-1, 1] as const) for (let i = 0, start = pv0 - (row % 2) * 1.6; start < pv1; start += 3.2, i++) {
+      // Return bricks stop inside the front/back skins, without coincident corner faces.
+      const a = Math.max(pv0 + brickDepth + .045, start + .045), z = Math.min(pv1 - brickDepth - .045, start + 3.2 - .045);
+      if (z <= a) continue;
+      const u0 = side < 0 ? pl0 : pl1 - brickDepth;
+      k.box(u0, u0 + brickDepth, ya, yb, a, z, shade(BRICK, 1 + .045 * Math.sin(i * 2.4 + row * .8)));
+    }
+  }
+  const coping = hex(0xb8a18b);
+  k.box(pl0, pl1, P + 5.65, P + 6, pv0, pv0 + .65, coping);
+  k.box(pl0, pl1, P + 5.65, P + 6, pv1 - .65, pv1, coping);
+  k.box(pl0, pl0 + .65, P + 5.65, P + 6, pv0 + .65, pv1 - .65, coping);
+  k.box(pl1 - .65, pl1, P + 5.65, P + 6, pv0 + .65, pv1 - .65, coping);
   k.box(pl0 + 0.8, pl1 - 0.8, P + 6, P + 6.6, pv0 + 0.8, pv1 - 0.8, hex(0x4a3020));
   for (let i = 0; i < 8; i++) {
     const u = pl0 + 3 + (i * (pl1 - pl0 - 6)) / 7;

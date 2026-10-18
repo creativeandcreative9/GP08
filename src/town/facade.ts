@@ -8,8 +8,8 @@ import { hex, lerp, type RGB } from './util';
  * behind it), and made of indexed quads (4 vertices each).
  *
  * The central piece is {@link skinWall}: a wall with rectangular openings CUT OUT of it, so that a window sits back from the
- * wall face behind real reveals (jambs, head, sill). The sun then casts a shadow line under the head and the SSAO darkens the
- * reveal, which is what makes a flat facade look like a built one. The wall carries a surface tag (tile, panel, siding...) so
+ * wall face behind real reveals (jambs, head, sill). The sun then casts a shadow line under the head and across the
+ * reveal, which gives the facade depth. The wall carries a surface tag (tile, panel, siding...) so
  * the shader draws the material on it (see surface.ts).
  */
 

@@ -13,6 +13,7 @@ import type { GameScene } from '../scene';
 import type { LifeState } from './calendar';
 import { createPuddles } from './puddles';
 import { EveningAtmosphere } from './evening-atmosphere';
+import { setSkyClimate } from '../sky';
 
 /** Gameplay lighting only; the five reference cameras keep the reproducible spring-afternoon setup. */
 export class Environment {
@@ -83,10 +84,10 @@ export class Environment {
     // The lift vanishes before daytime, preserving the spring-afternoon reference palette.
     const skyBoost = Math.max(0, day - .04) / .96;
     const nightFill = Math.max(0, 1 - day / .45);
-    hemi.intensity = indoor ? .95 : .48 + (day * .3 + skyBoost * .12) * overcast + .12 * nightFill;
-    hemi.diffuse = Color3.Lerp(new Color3(.38 + .2 * nightFill, .48 + .18 * nightFill, .78 + .04 * nightFill), new Color3(.8, .86, 1), day);
-    sun.intensity = indoor ? .3 : day * 1.15 * overcast;
-    sun.diffuse.set(1, .91 - sunset * .4, .78 - sunset * .4);
+    hemi.intensity = indoor ? .95 : .48 + (day * .20 + skyBoost * .08) * overcast + .12 * nightFill;
+    hemi.diffuse = Color3.Lerp(new Color3(.38 + .2 * nightFill, .48 + .18 * nightFill, .78 + .04 * nightFill), new Color3(.76, .84, 1), day);
+    sun.intensity = indoor ? .3 : day * 1.35 * overcast;
+    sun.diffuse.set(1, .94 - sunset * .4, .85 - sunset * .4);
     sun.direction.set(-.6, -.12 - day * .5, .55).normalize();
     const fog = Color3.Lerp(new Color3(.045, .065, .13), new Color3(.84, .9, .97), day * overcast);
     fog.r += sunset * .18; fog.b -= sunset * .12;
@@ -97,6 +98,9 @@ export class Environment {
       this.colors[i + 2] = this.base[i + 2]! * (.2 + day * .8) * overcast;
     }
     this.sky?.updateVerticesData(VertexBuffer.ColorKind, this.colors);
+    setSkyClimate(scene, day, overcast, sunset);
+    const distantRidges = scene.getMaterialByName('farMountainMat') as StandardMaterial | null;
+    distantRidges?.emissiveColor.set((.08 + day * .92) * overcast, (.1 + day * .9) * overcast, (.2 + day * .8) * overcast);
     const shafts = scene.getMaterialByName('light-shafts');
     if (shafts) shafts.alpha = indoor ? 0 : .18 * day * overcast;
     const glass = scene.getMaterialByName('glassMat') as StandardMaterial | null;

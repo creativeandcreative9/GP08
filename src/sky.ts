@@ -3,6 +3,10 @@ import { DynamicTexture } from '@babylonjs/core/Materials/Textures/dynamicTextur
 import { Mesh } from '@babylonjs/core/Meshes/mesh.js';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder.js';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial.js';
+import { MaterialPluginBase } from '@babylonjs/core/Materials/materialPluginBase.js';
+import { ShaderLanguage } from '@babylonjs/core/Materials/shaderLanguage.js';
+import type { UniformBuffer } from '@babylonjs/core/Materials/uniformBuffer.js';
+import type { DirectionalLight } from '@babylonjs/core/Lights/directionalLight.js';
 import { Texture } from '@babylonjs/core/Materials/Textures/texture.js';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode.js';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
@@ -15,6 +19,44 @@ import { makeRng } from './town/util';
 export const HORIZON = new Color3(0.84, 0.9, 0.97);
 const MID = new Color3(0.6, 0.76, 0.95);
 const ZENITH = new Color3(0.33, 0.57, 0.91);
+
+/** A per-pixel sky avoids the broad polygonal bands of a vertex-coloured dome. */
+class SpringSky extends MaterialPluginBase {
+  constructor(material: StandardMaterial) { super(material, 'GP08SpringSky', 230, {}, true, true); }
+  override getClassName(): string { return 'GP08SpringSky'; }
+  override isCompatible(language: ShaderLanguage): boolean { return language === ShaderLanguage.GLSL; }
+  override getUniforms(): { ubo: { name: string; size: number; type: string }[]; fragment: string } {
+    return { ubo: [{ name: 'gpSkyClimate', size: 3, type: 'vec3' }, { name: 'gpSkySun', size: 3, type: 'vec3' }],
+      fragment: 'uniform vec3 gpSkyClimate;\nuniform vec3 gpSkySun;' };
+  }
+  override bindForSubMesh(buffer: UniformBuffer): void {
+    const scene = this._material.getScene(), climate = scene.metadata?.skyClimate ?? [1, 1, 0];
+    buffer.updateFloat3('gpSkyClimate', climate[0], climate[1], climate[2]);
+    const sun = scene.getLightByName('sun') as DirectionalLight | null;
+    const d = sun?.direction;
+    buffer.updateFloat3('gpSkySun', -(d?.x ?? -.6), -(d?.y ?? -.62), -(d?.z ?? .55));
+  }
+  override getCustomCode(type: string): { [point: string]: string } | null {
+    if (type !== 'fragment') return null;
+    return { CUSTOM_FRAGMENT_BEFORE_FOG: `
+float gpElevation = max(0.0, -viewDirectionW.y);
+vec3 gpSky = gpElevation < .18
+  ? mix(vec3(.84,.90,.97), vec3(.60,.76,.95), pow(gpElevation/.18, .8))
+  : mix(vec3(.60,.76,.95), vec3(.33,.57,.91), min(1.0, pow((gpElevation-.18)/.62, .7)));
+gpSky *= (vec3(.08,.10,.20) + vec3(.92,.90,.80) * gpSkyClimate.x) * gpSkyClimate.y;
+gpSky += vec3(.30,.05,0.0) * gpSkyClimate.z * (1.0-smoothstep(.0,.55,gpElevation));
+float gpSunFacing = max(0.0, dot(-viewDirectionW, normalize(gpSkySun)));
+gpSky += vec3(.12,.09,.035) * pow(gpSunFacing, 18.0) * gpSkyClimate.x * gpSkyClimate.y;
+// Fixed sub-pixel dithering keeps dusk gradients smooth on 8-bit phone displays.
+float gpDither = fract(52.9829189 * fract(dot(gl_FragCoord.xy, vec2(.06711056,.00583715))))-.5;
+color.rgb = gpSky + vec3(gpDither / 768.0);
+` };
+  }
+}
+
+export function setSkyClimate(scene: Scene, day: number, overcast: number, sunset: number): void {
+  scene.metadata = { ...scene.metadata, skyClimate: [day, overcast, sunset] };
+}
 
 function unlit(scene: Scene, name: string): StandardMaterial {
   const m = new StandardMaterial(name, scene);
@@ -39,6 +81,7 @@ function createDome(scene: Scene): Mesh {
   }
   sky.setVerticesData(VertexBuffer.ColorKind, colors, true);
   sky.material = unlit(scene, 'skyMat');
+  new SpringSky(sky.material as StandardMaterial);
   sky.infiniteDistance = true;
   sky.isPickable = false;
   sky.applyFog = false;

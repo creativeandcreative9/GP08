@@ -28,8 +28,8 @@ const BARK_LT: C3 = [150, 120, 106];
 /** A cherry flower of radius R: five notched petals, deeper pink at the heart, a few stamens. */
 export function sakura(g: Ctx2D, x: number, y: number, R: number, rot: number, light: number, r: Rng): void {
   const col = ramp(BLOOM, light);
-  const rim = ramp(BLOOM, light - 0.3);
-  const deep = ramp(BLOOM, 0.04);
+  const rim = ramp(BLOOM, light - 0.2);
+  const deep = ramp(BLOOM, Math.max(0.18, light - 0.38));
   g.save();
   g.translate(x, y);
   g.rotate(rot);
@@ -46,16 +46,17 @@ export function sakura(g: Ctx2D, x: number, y: number, R: number, rot: number, l
     g.closePath();
     g.fillStyle = css(r() < 0.25 ? mix3(col, rim, 0.25) : col);
     g.fill();
-    g.strokeStyle = css(rim, 0.6);
+    g.strokeStyle = css(rim, 0.35);
     g.stroke();
   }
-  g.fillStyle = css(deep, 0.5);
+  // A translucent blush, rather than a dark circular eye on every repeated flower.
+  g.fillStyle = css(deep, 0.32);
   g.beginPath();
-  g.arc(0, 0, R * 0.3, 0, TAU);
+  g.arc(0, 0, R * 0.22, 0, TAU);
   g.fill();
-  g.fillStyle = css(deep, 0.75);
+  g.fillStyle = css(deep, 0.4);
   g.beginPath();
-  g.arc(0, 0, R * 0.16, 0, TAU);
+  g.arc(0, 0, R * 0.09, 0, TAU);
   g.fill();
   g.fillStyle = css([255, 222, 150], 0.95);
   for (let k = 0; k < 5; k++) {
@@ -81,14 +82,14 @@ interface BloomOpts {
 
 /** A soft cloud of cherry flowers on a few dark twigs: lit on top, deep pink underneath and at the heart. */
 function bloomCluster(g: Ctx2D, w: number, h: number, r: Rng, o: BloomOpts): void {
-  const lobes = makeLobes(w, h, r, o.lobes, 0.2, 0.15, 0.21);
-  // backing: keeps the body closed, so that only the rim is ragged
-  for (const l of lobes) {
-    g.fillStyle = css(ramp(BLOOM, 0.1));
-    g.beginPath();
-    g.arc(l.x, l.y, l.r * 0.66, 0, TAU);
-    g.fill();
-  }
+  const lobes = makeLobes(w, h, r, o.lobes, 0.235, 0.095, 0.18);
+  // Distinct overlapping bunches, with irregular shoulders and small clefts between them.
+  // Small bunches share the canopy light; strong radial shading made each read as a ball.
+  const lobeLight = lobes.map((l, i) => {
+    if (i) { l.y += (r() - .5) * h * .07; l.x += (r() - .5) * w * .045; }
+    return (r() - .5) * .12;
+  });
+  // No opaque discs underneath: overlapping petals leave irregular glimpses of twigs and sky.
   // dark twigs that show between the flowers
   for (let i = 0; i < o.twigs; i++) {
     const x0 = w * (0.5 + (r() - 0.5) * 0.3);
@@ -114,17 +115,45 @@ function bloomCluster(g: Ctx2D, w: number, h: number, r: Rng, o: BloomOpts): voi
   const dots = scatterDots(lobes, w, h, r, o.count, margin, o.R[0] * 0.82, o.R[0] * 0.75);
   for (const d of dots) {
     const edge = 1 - clamp01(d.s / (0.17 * w));
-    const light = o.base + 0.34 * -d.ny + 0.18 * (edge - 0.35) + (r() - 0.5) * o.spread;
-    sakura(g, d.x, d.y, o.R[0] + r() * (o.R[1] - o.R[0]), r() * TAU, light, r);
+    let nearest = 0, distance = Infinity;
+    for (let i = 0; i < lobes.length; i++) {
+      const l = lobes[i]!, q = Math.hypot(d.x - l.x, d.y - l.y) / l.r;
+      if (q < distance) { nearest = i; distance = q; }
+    }
+    const l = lobes[nearest]!, ny = (d.y - l.y) / l.r;
+    const round = Math.sqrt(Math.max(0, 1 - distance * distance));
+    const light = o.base - .14 * d.ny - .08 * ny + .045 * round + lobeLight[nearest]!
+      + .07 * (edge - .35) + (r() - .5) * o.spread;
+    const radius = (o.R[0] + r() * (o.R[1] - o.R[0])) * (r() < .18 ? .72 : 1);
+    sakura(g, d.x, d.y, radius, r() * TAU, light, r);
   }
   // soft shading over the whole cluster: lit on top, cool and deeper underneath
   g.globalCompositeOperation = 'source-atop';
   const gr = g.createLinearGradient(0, h * 0.12, 0, h * 0.92);
   gr.addColorStop(0, 'rgba(255,255,255,0.12)');
   gr.addColorStop(0.5, 'rgba(255,255,255,0)');
-  gr.addColorStop(1, 'rgba(130,55,105,0.22)');
+  gr.addColorStop(1, 'rgba(145,85,116,0.22)');
   g.fillStyle = gr;
   g.fillRect(0, 0, w, h);
+  // Tapered, uneven clefts run in from the lower rim. Isolated round cutouts looked
+  // like repeating dots; these follow the gaps between flowering sprays instead.
+  g.globalCompositeOperation = 'destination-out';
+  g.fillStyle = 'rgba(0,0,0,1)';
+  for (let i = 0; i < 3; i++) {
+    const x = w * (.24 + i * .25 + (r() - .5) * .08);
+    const y = h * (.59 + r() * .12), length = h * (.14 + r() * .1);
+    const lean = (r() - .5) * w * .07, width = 3 + r() * 4;
+    g.beginPath();
+    g.moveTo(x - width * 1.4, y + length);
+    g.lineTo(x + lean * .3 - width, y + length * .55);
+    g.lineTo(x + lean - width * .35, y + length * .22);
+    g.lineTo(x + lean, y);
+    g.lineTo(x + lean + width * .5, y + length * .28);
+    g.lineTo(x + lean * .3 + width * .6, y + length * .63);
+    g.lineTo(x + width * 1.2, y + length);
+    g.closePath();
+    g.fill();
+  }
   g.globalCompositeOperation = 'source-over';
 }
 
@@ -361,12 +390,12 @@ const GREENS: Record<string, Ramp> = {
 type Painter = (g: Ctx2D, w: number, h: number, r: Rng) => void;
 
 const bloomOf = (base: number, spread: number, R: [number, number], count: number): Painter => (g, w, h, r) =>
-  bloomCluster(g, w, h, r, { base, spread, R, count, lobes: 7, twigs: 3, leaves: 6 });
+  bloomCluster(g, w, h, r, { base, spread, R, count, lobes: 9, twigs: 3, leaves: 6 });
 
 const PAINTERS: Partial<Record<CellName, Painter>> = {
-  bloomA: bloomOf(0.78, 0.34, [12, 17], 300),
-  bloomB: bloomOf(0.56, 0.36, [12, 17], 300),
-  bloomC: bloomOf(0.3, 0.34, [12, 17], 290),
+  bloomA: bloomOf(0.78, 0.34, [9, 14], 450),
+  bloomB: bloomOf(0.58, 0.36, [9, 14], 450),
+  bloomC: bloomOf(0.38, 0.34, [9, 14], 430),
   bloomD: (g, w, h, r) => bloomCluster(g, w, h, r, { base: 0.55, spread: 0.85, R: [11, 16], count: 320, lobes: 8, twigs: 4, leaves: 10 }),
   bloomE: (g, w, h, r) => bloomCluster(g, w, h, r, { base: 0.7, spread: 0.4, R: [13, 19], count: 230, lobes: 6, twigs: 3, leaves: 12 }),
   sprayA: (g, w, h, r) => bloomBranch(g, w, h, r, [w * 0.46, 10], [w * 0.58, h - 34], 0.12, 11, { base: 0.62, R: [11, 15], deepEnd: true }),

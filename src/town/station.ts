@@ -6,38 +6,92 @@ import { furnishConcourse, platformPassengers } from './stationprops';
 import { pane, signZ, stationKit, type StationKit } from './stationkit';
 import { faceWithHoles, reveal, type Hole, type UvFn } from './wallface';
 import { hex, type RGB, type V3 } from './util';
+import { SURF } from '../surface';
 
 export { finishStation } from './stationkit';
 
 const WALL: RGB = hex(0xf3ecde);
 const PLINTH: RGB = hex(0xb9b4a8);
-const ROOF_BLUE: RGB = hex(0x2f6fb5);
-const ROOF_UNDER: RGB = hex(0xdfe6ee);
+const ROOF_METAL: RGB = hex(0x64777a);
+const ROOF_UNDER: RGB = hex(0xd7dbd6);
 const ALU: RGB = hex(0xc8ccd2);
 const TRIM: RGB = hex(0xe9e9e6);
 const UP: V3 = [0, 1, 0];
-const ROOF_SEAM: RGB = hex(0x2661a8);
+const ROOF_SEAM: RGB = hex(0x52666a);
 
-/** Standing-seam metal roof: the slope is made of narrow alternating strips (no overlapping surfaces). */
+/** Quiet sheet metal with narrow folded seams; the original slopes and roof envelope stay intact. */
 function roofStrips(b: MeshBatch, x0: number, x1: number, yEave: number, zEave: number, yRidge: number, zRidge: number, hint: V3): void {
+  const surface = b.surface, axis = b.axis;
+  b.surface = SURF.paintedMetal; b.axis = 0;
   const n = Math.round((x1 - x0) / 8.5);
+  const length = Math.hypot(...hint), ny = hint[1] / length, nz = hint[2] / length;
   for (let i = 0; i < n; i++) {
     const xa = x0 + ((x1 - x0) * i) / n;
     const xb = x0 + ((x1 - x0) * (i + 1)) / n;
-    b.quad([xa, yEave, zEave], [xa, yRidge, zRidge], [xb, yRidge, zRidge], [xb, yEave, zEave], i % 4 === 3 ? ROOF_SEAM : ROOF_BLUE, hint);
+    const tone = 0.99 + (i % 3) * .01;
+    b.quad([xa, yEave, zEave], [xa, yRidge, zRidge], [xb, yRidge, zRidge], [xb, yEave, zEave],
+      [ROOF_METAL[0] * tone, ROOF_METAL[1] * tone, ROOF_METAL[2] * tone], hint);
+    if (i === n - 1) continue;
+    const point = (x: number, t: number, lift: number): V3 => [x, yEave + (yRidge - yEave) * t + ny * lift, zEave + (zRidge - zEave) * t + nz * lift];
+    // A two-centimetre folded lip catches light without turning every fourth panel into a broad dark stripe.
+    const a = point(xb - .09, .006, .025), d = point(xb - .09, .985, .025);
+    const at = point(xb - .09, .006, .30), dt = point(xb - .09, .985, .30);
+    const c = point(xb + .09, .985, .025), e = point(xb + .09, .006, .025);
+    const ct = point(xb + .09, .985, .30), et = point(xb + .09, .006, .30);
+    b.quad(a, d, dt, at, ROOF_SEAM, [-1, 0, 0]);
+    b.quad(e, et, ct, c, ROOF_SEAM, [1, 0, 0]);
+    b.quad(at, dt, ct, et, hex(0x819193), hint);
   }
+  b.surface = surface; b.axis = axis;
 }
 
 const toHole = (o: Opening): Hole => ({ a0: o.x0, a1: o.x1, y0: F + o.y0, y1: F + o.y1 });
 
-/** A flat window (sash + glass) painted on a wall of a solid wing. */
+/** Opaque office glazing layered behind shallow sash reveals, within the original wall/window envelope. */
 function flatWindow(b: MeshBatch, axis: 'x' | 'z', plane: number, facing: 1 | -1, a0: number, a1: number, y0: number, y1: number): void {
+  const surface = b.surface, previousAxis = b.axis;
+  b.surface = SURF.paintedMetal; b.axis = 0;
   const P = (a: number, y: number, o: number): V3 => (axis === 'x' ? [a, y, plane + facing * o] : [plane + facing * o, y, a]);
   const hint: V3 = axis === 'x' ? [0, 0, facing] : [facing, 0, 0];
-  b.quad(P(a0, y0, 0.4), P(a1, y0, 0.4), P(a1, y1, 0.4), P(a0, y1, 0.4), hex(0xf7f7f4), hint);
-  b.quad(P(a0 + 1.6, y0 + 1.6, 0.8), P(a1 - 1.6, y0 + 1.6, 0.8), P(a1 - 1.6, y1 - 1.6, 0.8), P(a0 + 1.6, y1 - 1.6, 0.8), hex(0x8fc4e8), hint);
+  const q = (left: number, right: number, bottom: number, top: number, depth: number, color: RGB): void => {
+    b.quad(P(left, bottom, depth), P(right, bottom, depth), P(right, top, depth), P(left, top, depth), color, hint);
+  };
+  const sash = hex(0xb9c0bb), edge = hex(0x7e8b89), low = hex(0x3e555b), high = hex(0x819599);
+  q(a0, a1, y0, y1, .4, hex(0x46565a));
   const mid = (a0 + a1) / 2;
-  b.quad(P(mid - 0.5, y0 + 1.6, 1), P(mid + 0.5, y0 + 1.6, 1), P(mid + 0.5, y1 - 1.6, 1), P(mid - 0.5, y1 - 1.6, 1), hex(0xf7f7f4), hint);
+  const bottom = y0 + 1.1, top = y1 - 1.1;
+  for (const [left, right, curtainSide] of [[a0 + 1.1, mid - .5, -1], [mid + .5, a1 - 1.1, 1]]) {
+    const start = b.vertexCount;
+    q(left!, right!, bottom, top, .53, low);
+    for (let i = start; i < b.vertexCount; i++) {
+      const t = (b.pos[i * 3 + 1]! - bottom) / (top - bottom);
+      for (let channel = 0; channel < 3; channel++) b.col[i * 4 + channel] = low[channel]! + (high[channel]! - low[channel]!) * t;
+    }
+    // Gathered curtains are seen through the tinted pane; their quiet folds leave most of the glass visible.
+    const width = 1.8, curtainLeft = curtainSide! < 0 ? left! : right! - width;
+    for (let fold = 0; fold < 3; fold++) {
+      const x = curtainLeft + fold * width / 3;
+      b.quad(P(x, bottom + 2.0, .56), P(x + width / 6, bottom + 2.25, .61),
+        P(x + width / 6, top - .35, .61), P(x, top - .35, .56), hex(0x8b938d), hint);
+      b.quad(P(x + width / 6, bottom + 2.25, .61), P(x + width / 3, bottom + 2.0, .56),
+        P(x + width / 3, top - .35, .56), P(x + width / 6, top - .35, .61), hex(0x788681), hint);
+    }
+    b.quad(P(left! + .7, bottom + 3, .66), P(left! + 1.15, bottom + 3, .66),
+      P(right! - .55, top - 2.5, .66), P(right! - 1.0, top - 2.5, .66), hex(0x9badae), hint);
+    q(left!, right!, top - .45, top, .68, hex(0x3f5055));
+  }
+  // Folded aluminium surrounds stand forward of the glass, including the lower sill's top surface.
+  for (const [left, right] of [[a0, a0 + 1.1], [a1 - 1.1, a1]]) q(left!, right!, y0, y1, .98, sash);
+  q(a0 + 1.1, a1 - 1.1, y0, bottom, .98, edge);
+  q(a0 + 1.1, a1 - 1.1, top, y1, .98, sash);
+  b.quad(P(a0 + 1.1, bottom, .53), P(a1 - 1.1, bottom, .53), P(a1 - 1.1, bottom, .98), P(a0 + 1.1, bottom, .98), sash, UP);
+  for (const [x, side] of [[a0 + 1.1, 1], [a1 - 1.1, -1]]) {
+    const normal: V3 = axis === 'x' ? [side!, 0, 0] : [0, 0, side!];
+    b.quad(P(x!, bottom, .53), P(x!, bottom, .98), P(x!, top, .98), P(x!, top, .53), edge, normal);
+  }
+  q(mid - .29, mid + .5, bottom, top, 1, sash);
+  q(mid - .5, mid - .29, bottom, top, 1, edge);
+  b.surface = surface; b.axis = previousAxis;
 }
 
 /** Window panes, mullions and rails of the window openings of one wall of the concourse. */
@@ -186,7 +240,7 @@ export function buildStationBuilding(c: Ctx, b: MeshBatch): void {
 
   // --- entrance canopy (over the doors and the ramp only, so that the sun still reaches the windows)
   const zc0 = BLD.z0 - 28;
-  b.box(-52, 52, F + 34, F + 38, zc0, BLD.z0, hex(0xf2f5f8), { bottom: true, top: ROOF_BLUE });
+  b.box(-52, 52, F + 34, F + 38, zc0, BLD.z0, hex(0xf2f5f8), { bottom: true, top: ROOF_METAL });
   for (const x of [-48.5, 48.5]) b.box(x - 2, x + 2, F, F + 34, zc0 + 2, zc0 + 6, hex(0x9a9ca8));
   b.box(-52.4, 52.4, F + 33, F + 39, zc0 - 0.8, zc0 + 0.4, hex(0xffffff));
 
@@ -194,7 +248,7 @@ export function buildStationBuilding(c: Ctx, b: MeshBatch): void {
   const tx = 60;
   const tz0 = BLD.z0 - 4;
   b.box(-tx, tx, top - 2, top + 28, tz0, BLD.z0 + 28, WALL);
-  b.box(-tx - 2, tx + 2, top + 28, top + 30, tz0 - 2, BLD.z0 + 30, ROOF_BLUE, { bottom: true });
+  b.box(-tx - 2, tx + 2, top + 28, top + 30, tz0 - 2, BLD.z0 + 30, ROOF_METAL, { bottom: true });
   const sw = 108;
   signZ(k.signs, k.tex.uv('stationName'), 0, top + 0.5, sw, sw / 4, tz0 - 0.15, -1);
   // sign on the back of the tower and on the platform side wall
@@ -243,7 +297,9 @@ export function buildNamePoles(c: Ctx, b: MeshBatch): void {
   for (const [z, xs] of [[764, [-440, -120, 220, 560]], [842, [-440, -120, 220, 560]]] as [number, number[]][]) {
     for (const x of xs) {
       b.cylinder(x, z, F, F + 40, 1.2, 1.2, 6, steel);
-      b.box(x - 22.8, x + 22.8, F + 38.8, F + 52.5, z - 1.1, z + 1.1, hex(0x1a56a8), { bottom: true });
+      b.box(x - 22.8, x + 22.8, F + 38.8, F + 52, z - 1.1, z + 1.1, hex(0xd8dcd7), { bottom: true });
+      // A quiet enamel frame and a folded top edge keep the station name prominent.
+      b.box(x - 22.8, x + 22.8, F + 52, F + 52.5, z - 1.1, z + 1.1, hex(0x67777a));
       signZ(k.signs, uv, x, F + 39.6, 44, 11, z - 1.2, -1);
       signZ(k.signs, uv, x, F + 39.6, 44, 11, z + 1.2, 1);
     }

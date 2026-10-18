@@ -84,12 +84,17 @@ function awning(b: MeshBatch, f: Frame, hu: number, hv: number, y: number, out: 
   const n = Math.max(2, Math.round(w / 17));
   const sw = w / n;
   const c0 = hex(cols[0]);
-  const c1 = hex(cols[1]);
+  const c1 = hex(cols[1] === 0xffffff ? 0xefe8d8 : cols[1]);
   for (let i = 0; i < n; i++) {
     const u0 = -w / 2 + i * sw;
     const u1 = u0 + sw;
     const col = i % 2 ? c1 : c0;
-    b.quad(f.pt(u0, y, hv + 0.5), f.pt(u1, y, hv + 0.5), f.pt(u1, y - 3.2, hv + out), f.pt(u0, y - 3.2, hv + out), col, f.dir(0, 1, 3.2 / (out - .5)));
+    for (let j = 0; j < 3; j++) {
+      const t0 = j / 3, t1 = (j + 1) / 3;
+      const ya = y - 3.2 * t0 - .7 * Math.sin(t0 * Math.PI), yb = y - 3.2 * t1 - .7 * Math.sin(t1 * Math.PI);
+      const va = hv + .5 + (out - .5) * t0, vb = hv + .5 + (out - .5) * t1;
+      b.quad(f.pt(u0, ya, va), f.pt(u1, ya, va), f.pt(u1, yb, vb), f.pt(u0, yb, vb), col, f.dir(0, 1, (ya - yb) / (vb - va)));
+    }
     b.quad(f.pt(u0, y - 3.2, hv + out), f.pt(u1, y - 3.2, hv + out), f.pt(u1, y - 5.2, hv + out), f.pt(u0, y - 5.2, hv + out), col, f.dir(0, 0, 1));
     // underside (darker)
     b.quad(f.pt(u0, y - 2.8, hv + 0.5), f.pt(u0, y - 3.2, hv + out), f.pt(u1, y - 3.2, hv + out), f.pt(u1, y - 2.8, hv + 0.5), shade(col, 0.7), f.dir(0, -1, 0));
@@ -140,7 +145,8 @@ export function addShop(c: Ctx, lot: Lot, rect: Rect, f: Frame, hu: number, hv: 
 
   // ---- body: plinth, closed upper storeys or roof slab, hollow ground floor behind the glass -----------------------
   f.box(b, -hu - 0.6, hu + 0.6, 0, 3.5, -hv - 0.6, hv + 0.6, hex(0x9c9a94));
-  if (fl > 1) detailedBlock(c, f, -hu, hu, -hv, hv, gfTop, fl - 1, upH, wall, st.tile ? SURF.tile : SURF.siding);
+  const plasterUpper = ['酒屋', '居酒屋', 'すし', 'ラーメン', '定食屋', 'ごはん屋'].includes(lot.label);
+  if (fl > 1) detailedBlock(c, f, -hu, hu, -hv, hv, gfTop, fl - 1, upH, wall, plasterUpper ? SURF.plain : st.tile ? SURF.tile : SURF.siding);
   else f.box(b, -hu, hu, gfTop - 3, gfTop, -hv, hv, wall);
   for (let i = 1; i < fl; i++) {
     const y = gfTop + (i - 1) * upH;
@@ -203,6 +209,11 @@ export function addShop(c: Ctx, lot: Lot, rect: Rect, f: Frame, hu: number, hv: 
     const a = -x1 + (2 * x1 * i) / nSh;
     const z = -x1 + (2 * x1 * (i + 1)) / nSh;
     k.tf(k.uv(ins.shelf), a + 2, z - 2, 8, ceil - 7, rb + 0.1, 1);
+    if (ins.shelf !== 'in:plain') {
+      const shelfWood = ins.counter ? hex(0x76624a) : hex(0xc0bdab);
+      for (const y of [8, (8 + ceil - 7) / 2, ceil - 7]) k.ibox(a + 1.5, z - 1.5, y - .55, y, rb + .2, rb + 3, shelfWood, 'TFLR');
+      for (const u of [a + 1.5, z - 1.5]) k.ibox(u - .35, u + .35, 7.5, ceil - 7, rb + .2, rb + 2.6, shade(shelfWood, .8), 'TFLR');
+    }
   }
   const nl = Math.max(1, Math.round((2 * x1) / 48));
   for (let i = 0; i < nl; i++) {

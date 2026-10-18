@@ -17,6 +17,16 @@ const WHITE = hex(0xf6f6f2);
 const LAUNDRY: RGB[] = [0xffffff, 0xf4d4da, 0xbcd8f2, 0xf6e6a0, 0xcfe8c8, 0xe58a8a, 0x7aa6d8, 0xf2f2f2].map(hex);
 const CAR_COLS: RGB[] = [0xf2f2f2, 0xd8d8dc, 0x2a2d35, 0xc03434, 0x3f6fb0, 0x8a8e96, 0xe8d8a8, 0x4f8f5f, 0xf0c8d0].map(hex);
 
+/** Four broad folds read as cloth at street distance without a texture or random draws. */
+function curtainFolds(w: Wall, a0: number, a1: number, y0: number, y1: number, n: number, color: RGB): void {
+  for (let i = 0; i < 4; i++) {
+    const left = a0 + (a1 - a0) * i / 4, right = a0 + (a1 - a0) * (i + 1) / 4;
+    const nl = n + (i % 2 ? .14 : 0), nr = n + (i % 2 ? 0 : .14);
+    const light = tone(color, i % 2 ? .98 : .9), dark = tone(color, i % 2 ? .88 : .8);
+    w.wq([left, y0 + .2, nl], [right, y0, nr], [right, y1, nr], [left, y1, nl], dark, light, light, dark, [0, 0, 1]);
+  }
+}
+
 export interface WinOpts {
   /** 1 = a single pane, 2 = two sliding sashes with a mullion between (default). */
   panes?: 1 | 2;
@@ -50,15 +60,19 @@ export function sashWindow(w: Wall, pos: number, y: number, ww: number, hh: numb
   }
   if (o.curtain) {
     const side = o.curtainSide ?? -1;
-    const lo = tone(o.curtain, 0.86);
     const iw = ww - fw * 2;
+    // A shallow top rail and side return cast a real narrow shadow around lived-in windows.
+    if (!o.bare) {
+      w.box(pos - hw, pos + hw, y + hh - .65, y + hh + .2, n0 + .3, n0 + 1.7, frame, 'otd');
+      w.box(pos - hw, pos - hw + .6, y, y + hh, n0 + .3, n0 + 1.25, tone(frame, .86), 'oz');
+    }
     if (side === 0) {
-      w.q(pos - hw + fw, pos - hw + fw + iw * 0.3, y + fw, y + hh - fw, n0 + 1.05, lo, o.curtain);
-      w.q(pos + hw - fw - iw * 0.3, pos + hw - fw, y + fw, y + hh - fw, n0 + 1.05, lo, o.curtain);
+      curtainFolds(w, pos - hw + fw, pos - hw + fw + iw * .3, y + fw, y + hh - fw, n0 + 1.05, o.curtain);
+      curtainFolds(w, pos + hw - fw - iw * .3, pos + hw - fw, y + fw, y + hh - fw, n0 + 1.05, o.curtain);
     } else if (side < 0) {
-      w.q(pos - hw + fw, pos - hw + fw + iw * 0.5, y + fw, y + hh - fw, n0 + 1.05, lo, o.curtain);
+      curtainFolds(w, pos - hw + fw, pos - hw + fw + iw * .5, y + fw, y + hh - fw, n0 + 1.05, o.curtain);
     } else {
-      w.q(pos + hw - fw - iw * 0.5, pos + hw - fw, y + fw, y + hh - fw, n0 + 1.05, lo, o.curtain);
+      curtainFolds(w, pos + hw - fw - iw * .5, pos + hw - fw, y + fw, y + hh - fw, n0 + 1.05, o.curtain);
     }
   }
   if (o.sill) w.box(pos - hw - 1.2, pos + hw + 1.2, y - 1.2, y, n0, n0 + 2.2, o.sill, o.sillFront ? 'ot' : 't');

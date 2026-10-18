@@ -267,8 +267,8 @@ function platformTexture(scene: Scene): DynamicTexture {
     const t = 256 / n;
     for (let ty = 0; ty < n; ty++) {
       for (let tx = 0; tx < n; tx++) {
-        const v = 0.965 + rnd() * 0.05;
-        g.fillStyle = `rgb(${Math.round(229 * v)},${Math.round(226 * v)},${Math.round(217 * v)})`;
+        const v = 0.98 + rnd() * 0.035;
+        g.fillStyle = `rgb(${Math.round(211 * v)},${Math.round(209 * v)},${Math.round(201 * v)})`;
         g.fillRect(tx * t, ty * t, t, t);
         for (let i = 0; i < 4; i++) {
           const x = tx * t + rnd() * t;
@@ -286,8 +286,8 @@ function platformTexture(scene: Scene): DynamicTexture {
       g.fillStyle = rnd() < 0.5 ? 'rgba(255,255,255,0.35)' : 'rgba(120,110,95,0.18)';
       g.fillRect(rnd() * 256, rnd() * 256, 1, 1);
     }
-    g.strokeStyle = 'rgba(146,138,124,0.5)';
-    g.lineWidth = 2;
+    g.strokeStyle = 'rgba(135,132,121,0.34)';
+    g.lineWidth = .8;
     g.beginPath();
     for (let k = 0; k <= n; k++) {
       g.moveTo(k * t, 0);

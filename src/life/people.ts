@@ -1,6 +1,7 @@
 import { MeshBatch } from '../town/batch';
 import { hex, type RGB, type V3 } from '../town/util';
 import { boxC, ellipsoid, mergeInto, mixRGB, roundedOctBand as octBand, plate, prism, shadeRGB, taperBox, type Oct } from './geom';
+import { personHand, personShoe, seatedLimb, softLoft } from './person-geometry';
 
 /**
  * Stylised low-poly people (about 21 units = 1.7 m for an adult). Local frame: +Z forward, +X to the person's right,
@@ -111,35 +112,45 @@ function headFrontZ(h: HeadFrame, y: number): number {
 }
 
 function buildHead(b: MeshBatch, h: HeadFrame, skin: RGB): void {
-  ellipsoid(b, 0, h.cy, h.hz, h.rx, h.ry, h.rz, skin, { seg: 12, rings: 8, phase: 0, smooth: true });
+  const firstSkin = b.vertexCount;
+  ellipsoid(b, 0, h.cy, h.hz, h.rx, h.ry, h.rz, skin, { seg: 16, rings: 10, phase: 0, smooth: true });
+  const jaw = (y: number): number => 1 + Math.min(0, (y - h.cy) / h.ry) * .2;
+  for (let i = firstSkin; i < b.vertexCount; i++) b.pos[i * 3] = b.pos[i * 3]! * jaw(b.pos[i * 3 + 1]!);
   // Small patches follow the face, including the cheeks at the side of the ellipsoid.
   // A single forward plane leaves these features visibly floating in a three-quarter view.
   const patch = (cx: number, cy: number, width: number, height: number, color: RGB, lift = .035): void => {
     const first = b.vertexCount;
-    for (let row = 0; row <= 2; row++) for (let col = 0; col <= 2; col++) {
-      const x = cx + (col - 1) * width, y = cy + (row - 1) * height;
-      const z = h.rz * Math.sqrt(Math.max(.01, 1 - (x / h.rx) ** 2 - ((y - h.cy) / h.ry) ** 2));
-      const nx = x / (h.rx * h.rx), ny = (y - h.cy) / (h.ry * h.ry), nz = z / (h.rz * h.rz), length = Math.hypot(nx, ny, nz);
+    for (let i = 0; i <= 10; i++) {
+      const angle = (i - 1) * Math.PI * 2 / 10;
+      const x = cx + (i === 0 ? 0 : Math.cos(angle) * width), y = cy + (i === 0 ? 0 : Math.sin(angle) * height);
+      const rx = h.rx * jaw(y), z = h.rz * Math.sqrt(Math.max(.01, 1 - (x / rx) ** 2 - ((y - h.cy) / h.ry) ** 2));
+      const nx = x / (rx * rx), ny = (y - h.cy) / (h.ry * h.ry), nz = z / (h.rz * h.rz), length = Math.hypot(nx, ny, nz);
       b.pos.push(x, y, h.hz + z + lift); b.nor.push(nx / length, ny / length, nz / length); b.col.push(...color, 1);
       if (b.withUV) b.uvs.push(0, 0);
     }
-    b.appendSurface(9);
-    for (let row = 0; row < 2; row++) for (let col = 0; col < 2; col++) {
-      const i = first + row * 3 + col; b.idx.push(i, i + 4, i + 1, i, i + 3, i + 4);
-    }
+    b.appendSurface(11);
+    for (let i = 0; i < 10; i++) b.idx.push(first, first + (i + 1) % 10 + 1, first + i + 1);
   };
-  const eyeY = h.cy - .04 * h.ry, ex = .42 * h.rx;
-  const ew = Math.max(.14, .12 * h.rx), eh = Math.max(.15, .105 * h.ry);
+  const eyeY = h.cy - .04 * h.ry, ex = .41 * h.rx;
+  const ew = .22 * h.rx, eh = .075 * h.ry;
+  const sclera = mixRGB(skin, WHITE, .56), iris: RGB = [.30, .23, .20];
   for (const sd of [-1, 1]) {
-    patch(sd * ex, eyeY, ew, eh, DARK);
-    patch(sd * ex - ew * .2, eyeY + eh * .35, ew * .22, eh * .2, WHITE, .06);
-    patch(sd * ex, eyeY + eh + .12, ew * 1.15, .045, shadeRGB(DARK, 1.8));
-    patch(sd * ex * 1.5, eyeY - eh - .25, ew * .8, .10, mixRGB(skin, [.95, .5, .5], .25));
+    patch(sd * ex, eyeY + .012, ew * 1.05, eh * 1.14, mixRGB(skin, DARK, .43));
+    patch(sd * ex, eyeY, ew, eh, sclera, .045);
+    patch(sd * ex, eyeY - .004, ew * .59, eh * .92, iris, .058);
+    patch(sd * ex, eyeY + .005, ew * .25, eh * .73, mixRGB(iris, DARK, .55), .067);
+    patch(sd * ex - ew * .18, eyeY + eh * .32, ew * .09, eh * .15, sclera, .079);
+    patch(sd * ex, eyeY + eh + .13, ew * .91, .029, mixRGB(DARK, skin, .40));
+    patch(sd * ex * 1.43, eyeY - eh - .23, ew * .8, .085, mixRGB(skin, [.93, .53, .51], .21));
   }
-  const nz = headFrontZ(h, eyeY - 0.35 * h.ry);
-  taperBox(b, eyeY - 0.5 * h.ry, eyeY - 0.12 * h.ry, { x0: -0.2, x1: 0.2, z0: nz - 0.1, z1: nz + 0.28 }, { x0: -0.1, x1: 0.1, z0: nz - 0.1, z1: nz + 0.22 }, shadeRGB(skin, 0.94));
-  patch(0, eyeY - .62 * h.ry, .28, .045, mixRGB(skin, [.75, .3, .3], .6));
-  for (const sd of [-1, 1]) boxC(b, sd * (h.rx + 0.05), eyeY - 0.1, h.hz - 0.1, 0.12, 0.45, 0.38, shadeRGB(skin, 0.95));
+  const noseY = eyeY - .27 * h.ry, nz = headFrontZ(h, noseY);
+  ellipsoid(b, 0, noseY, nz + .04, .125, .25, .20, shadeRGB(skin, .98), { seg: 8, rings: 6, smooth: true });
+  patch(0, eyeY - .57 * h.ry, .21, .028, mixRGB(skin, [.66, .29, .28], .43));
+  patch(0, eyeY - .61 * h.ry, .14, .027, mixRGB(skin, WHITE, .2));
+  for (const sd of [-1, 1]) {
+    ellipsoid(b, sd * (h.rx - .02), eyeY - .13, h.hz - .06, .21, .39, .30, skin, { seg: 8, rings: 6, smooth: true });
+    ellipsoid(b, sd * (h.rx + .11), eyeY - .13, h.hz + .04, .08, .21, .16, mixRGB(skin, [.76, .42, .37], .25), { seg: 6, rings: 4, smooth: true });
+  }
 }
 
 function buildHair(b: MeshBatch, h: HeadFrame, style: HairStyle, col: RGB, hat: boolean, shoulderY: number): void {
@@ -149,12 +160,17 @@ function buildHair(b: MeshBatch, h: HeadFrame, style: HairStyle, col: RGB, hat: 
   const c2 = shadeRGB(col, 1.18);
   if (style !== 'thin') {
     // crown cap from the hairline over the top
-    ellipsoid(b, 0, cy + .18 * ry, hz, rx + g, ry * .92, rz + g, col, { seg: 12, rings: 8, ringTo: 4, phase: 0, smooth: true });
+    ellipsoid(b, 0, cy + .18 * ry, hz, rx + g, ry * .92, rz + g, col, { seg: 16, rings: 10, ringTo: 5, phase: 0, smooth: true });
     if (!hat) {
       // fringe over the forehead
       for (let i = -2; i <= 2; i++) {
-        const xx = i * rx * .32, yy = cy + ry * (.24 + Math.abs(i) * .06), zz = hz + rz * Math.sqrt(1 - (xx / (rx + g)) ** 2) + .06;
-        b.tri([xx - rx * .22, cy + ry * .58, zz - .13], [xx + rx * .22, cy + ry * .58, zz - .13], [xx + rx * .12, yy, zz], i % 2 ? c2 : col, [0, 0, 1]);
+        const xx = i * rx * .32, yy = cy + ry * (.21 + Math.abs(i) * .045);
+        const zz = hz + rz * Math.sqrt(1 - (xx / (rx + g)) ** 2);
+        softLoft(b, [
+          { y: cy + ry * .72, a: rx * .22, c: .14, cx: xx - rx * .08, cz: zz - .25 },
+          { y: cy + ry * .47, a: rx * .24, c: .17, cx: xx, cz: zz + .005 },
+          { y: yy, a: rx * .035, c: .055, cx: xx + rx * .13, cz: zz + .08 },
+        ], i % 2 ? mixRGB(col, c2, .35) : col, { segments: 8, roundness: 2 });
       }
     }
   }
@@ -184,7 +200,7 @@ function buildHair(b: MeshBatch, h: HeadFrame, style: HairStyle, col: RGB, hat: 
       break;
     case 'bun':
       drape(cy - 0.3 * ry, 0.2, 0.0);
-      ellipsoid(b, 0, cy + 0.85 * ry, hz - rz * 0.55, 0.95, 0.8, 0.95, col, { seg: 6, rings: 3, jitter: 0.05 });
+      ellipsoid(b, 0, cy + 0.85 * ry, hz - rz * 0.55, 0.95, 0.8, 0.95, col, { seg: 12, rings: 8, smooth: true });
       break;
     case 'perm':
       drape(cy - 0.45 * ry, 0.4, 0.25, 0.9);
@@ -255,18 +271,34 @@ function buildArm(b: MeshBatch, o: V3, d: Dims, top: Outfit['top'], skin: RGB, g
   const y = o[1];
   const z = o[2];
   const sd = Math.sign(x) || 1;
-  const sec = (yy: number, a: number): Oct => ({ y: y + yy, a, c: a * 0.95, k: a * 0.32, cx: x, cz: z });
+  // A small backward elbow and forward wrist soften the pose without changing the
+  // shared shoulder pivot or requiring separate left/right instance templates.
+  const elbowY = -L * .47;
+  const bend = (yy: number): number => yy >= elbowY
+    ? -.27 * Math.max(0, -yy / -elbowY)
+    : -.27 + .89 * Math.min(1, (elbowY - yy) / (elbowY - wristY));
+  const sec = (yy: number, a: number): Oct => ({ y: y + yy, a, c: a * .95, k: a * .32, cx: x, cz: z + bend(yy) });
   if (short) {
     const mid = -L * 0.38;
-    octBand(b, sec(0.6, r * 1.1), sec(mid, r * 0.9), sleeve, { top: sleeve });
-    octBand(b, sec(mid, r * 0.82), sec(wristY, r * 0.62), skin);
+    softLoft(b, [sec(.17, r * .30), sec(-.24, r * .85), sec(-L * .19, r * .80), sec(mid, r * .70)], sleeve);
+    softLoft(b, [sec(mid, r * .66), sec(elbowY, r * .64), sec(-L * .67, r * .65), sec(wristY, r * .46)], skin, { roundness: 2 });
+    softLoft(b, [sec(mid + .16, r * .74), sec(mid - .03, r * .72)], shadeRGB(sleeve, .93), { caps: false });
   } else {
-    octBand(b, sec(0.6, r * 1.1), sec(wristY, r * 0.7), sleeve, { top: sleeve });
-    if (top.trim) octBand(b, sec(wristY + 0.55, r * 0.74), sec(wristY, r * 0.74), top.trim);
+    softLoft(b, [sec(.17, r * .30), sec(-.24, r * .85), sec(-L * .24, r * .77), sec(elbowY, r * .67),
+      sec(-L * .66, r * .69), sec(wristY + .34, r * .56), sec(wristY, r * .53)], sleeve);
+    softLoft(b, [sec(wristY + .40, r * .58), sec(wristY, r * .57)], top.trim ?? shadeRGB(sleeve, .95));
+    // A restrained elbow fold gives the cloth thickness without painting a grid onto it.
+    const foldY = y - L * .49;
+    const foldZ = z + bend(foldY - y);
+    b.tri([x - r * .45, foldY + .10, foldZ + r * .52], [x + r * .45, foldY - .10, foldZ + r * .52],
+      [x + r * .25, foldY - .04, foldZ + r * .65], shadeRGB(sleeve, .94), [0, 0, 1]);
   }
   const hc = glove ?? skin;
-  taperBox(b, y - L, y + wristY + 0.05, { x0: x - r * 0.6, x1: x + r * 0.6, z0: z - r * 0.45, z1: z + r * 0.75 }, { x0: x - r * 0.62, x1: x + r * 0.62, z0: z - r * 0.5, z1: z + r * 0.6 }, hc);
+  const handZ = z + bend(wristY);
+  personHand(b, x, y - L + .55, handZ, r * .89, hc);
   if (!hold) return;
+  // Carry props with the hand, including the cane's grounded end.
+  const propStart = b.vertexCount;
   const hy = y - L + 0.3;
   switch (hold.kind) {
     case 'brief':
@@ -291,6 +323,7 @@ function buildArm(b: MeshBatch, o: V3, d: Dims, top: Outfit['top'], skin: RGB, g
     default:
       break;
   }
+  for (let i = propStart; i < b.vertexCount; i++) b.pos[i * 3 + 2] = b.pos[i * 3 + 2]! + handZ - z;
 }
 
 function buildLeg(b: MeshBatch, d: Dims, o: Outfit): void {
@@ -304,16 +337,18 @@ function buildLeg(b: MeshBatch, d: Dims, o: Outfit): void {
   const sec = (y: number, a: number): Oct => ({ y, a, c: a * 0.96, k: a * 0.3 });
   if (bottom.kind === 'shorts') {
     const shortsEnd = -L * 0.34;
-    octBand(b, sec(0.6, r * 1.05), sec(shortsEnd, r * 0.95), bottom.color, { top: bottom.color });
-    octBand(b, sec(shortsEnd, r * 0.92), sec(kneeY, r * 0.84), skin);
+    softLoft(b, [sec(.6, r * 1.05), sec(-L * .14, r * 1.01), sec(shortsEnd, r * .93)], bottom.color);
+    softLoft(b, [sec(shortsEnd, r * .85), sec(kneeY, r * .72)], skin, { roundness: 2 });
   } else {
-    octBand(b, sec(0.6, r * 1.05), sec(kneeY, r * 0.85), pants ? bottom.color : skin, { top: pants ? bottom.color : skin });
+    softLoft(b, [sec(.6, r * 1.02), sec(-L * .16, r * 1.0), sec(-L * .37, r * .84), sec(kneeY, r * .76)],
+      pants ? bottom.color : skin, { roundness: pants ? 2.5 : 2 });
   }
   const lower = o.sock ?? (pants ? bottom.color : skin);
-  octBand(b, sec(kneeY, r * 0.85), sec(ankleY, r * 0.6), lower);
-  // shoe: toe forward (+z)
-  taperBox(b, -L, ankleY + 0.1, { x0: -r * 0.78, x1: r * 0.78, z0: -1.15, z1: 2.9 }, { x0: -r * 0.66, x1: r * 0.66, z0: -1.0, z1: 2.0 }, o.shoes);
-  taperBox(b, -L, -L + 0.18, { x0: -r * 0.8, x1: r * 0.8, z0: -1.2, z1: 2.95 }, { x0: -r * 0.8, x1: r * 0.8, z0: -1.2, z1: 2.95 }, shadeRGB(o.shoes, 0.55));
+  softLoft(b, [sec(kneeY, r * .76), sec(-L * .65, r * .84), sec(-L * .82, r * .64), sec(ankleY, r * .58)], lower,
+    { roundness: pants ? 2.5 : 2 });
+  if (pants) softLoft(b, [sec(ankleY + .35, r * .64), sec(ankleY - .04, r * .63)], shadeRGB(lower, .94));
+  else if (o.sock) softLoft(b, [sec(kneeY + .08, r * .775), sec(kneeY - .15, r * .79)], shadeRGB(lower, .93), { caps: false });
+  personShoe(b, 0, -L, 0, r, SHOE_H + .1, o.shoes);
 }
 
 interface BodyInfo {
@@ -321,7 +356,7 @@ interface BodyInfo {
   lean(y: number): number;
   head: HeadFrame;
   /** front surface z of the torso at height y */
-  front(y: number): number;
+  front(y: number, x?: number): number;
 }
 
 /** Torso, neck, head, hair, hat and the clothes details; `hipY` is the hip joint height (seat-relative when seated). */
@@ -338,30 +373,30 @@ function buildTorso(b: MeshBatch, d: Dims, o: Outfit, hipY: number, seated: bool
   const s0 = sec(hipY - 1.0, d.hipHalf, dep * 0.95, 0.8);
   const s1 = sec(hipY + 0.28 * d.torsoLen, d.waistHalf, dep * 0.88, 0.7);
   const s2 = sec(hipY + 0.75 * d.torsoLen, d.chestHalf, dep, 0.9);
-  const s3 = sec(shoulderY, d.shoulderHalf, dep * 0.82, 1.1);
-  const s4 = sec(shoulderY + 0.5, 1.5, 1.1, 0.6);
-  octBand(b, s0, s1, lowerCol, { bottom: lowerCol });
-  octBand(b, s1, s2, top.color);
-  octBand(b, s2, s3, top.color);
-  octBand(b, s3, s4, top.color, { top: top.color });
+  const s3 = sec(shoulderY - .65, d.shoulderHalf * .98, dep * .83, 1.1);
+  const s4 = sec(shoulderY + 0.5, d.neckR + .42, d.neckR + .27, 0.6);
+  softLoft(b, [s0, sec(hipY + .18, d.hipHalf * .98, dep * .95, .8), s1], lowerCol);
+  softLoft(b, [s1, sec(hipY + .54 * d.torsoLen, (d.waistHalf + d.chestHalf) / 2, dep * .98, .9), s2, s3, s4], top.color);
   const neckTop = shoulderY + d.neckLen;
   octBand(b, { y: shoulderY + 0.3, a: d.neckR, c: d.neckR, k: d.neckR * 0.35, cz: lean(shoulderY) }, { y: neckTop + 0.15, a: d.neckR * 0.95, c: d.neckR * 0.95, k: d.neckR * 0.35, cz: lean(shoulderY) + 0.3 }, shadeRGB(o.skin, 0.92));
   const head: HeadFrame = { cy: neckTop + d.headRy * 0.8, hz: lean(shoulderY) + 0.35 + stoop * 0.6, rx: d.headRx, ry: d.headRy, rz: d.headRz };
   buildPortrait(b, head, o.skin, o.hair, shoulderY, o.hat !== undefined);
   if (o.hat) buildHat(b, head, o.hat);
 
-  const secs = [s1, s2, s3];
-  const front = (y: number): number => {
+  const secs = [s0, s1, s2, s3, s4];
+  const front = (y: number, x = 0): number => {
     for (let i = 0; i + 1 < secs.length; i++) {
       const a = secs[i]!;
       const bb = secs[i + 1]!;
       if (y >= a.y && y <= bb.y) {
         const t = (y - a.y) / (bb.y - a.y);
-        return a.cz! + a.c + (bb.c - a.c) * t;
+        const width = a.a + (bb.a - a.a) * t, depth = a.c + (bb.c - a.c) * t;
+        return a.cz! + (bb.cz! - a.cz!) * t + depth * Math.max(0, 1 - Math.abs(x / width) ** 2.5) ** .4;
       }
     }
     return s3.cz! + s3.c;
   };
+  const clothPoint = (x: number, y: number, lift = .035): V3 => [x, y, front(y, x) + lift];
   if (top.shirt) {
     const y1 = shoulderY + 0.35;
     const y0 = shoulderY - 3.1;
@@ -370,9 +405,29 @@ function buildTorso(b: MeshBatch, d: Dims, o: Outfit, hipY: number, seated: bool
     b.tri([-1.0, y1, z1], [1.0, y1, z1], [0, y0, z0], top.shirt, [0, 0.2, 1]);
     if (top.tie) plate(b, [0, (y1 + y0) / 2 - 0.4, (z1 + z0) / 2 + 0.03], [0.3, 0, 0], [0, (y1 - y0) / 2 + 0.2, 0.04], top.tie, [0, 0, 1]);
     if (top.ribbon) boxC(b, 0, shoulderY - 0.8, front(shoulderY - 0.8) + 0.2, 0.75, 0.42, 0.22, top.ribbon);
+    for (const sd of [-1, 1]) {
+      b.quad(clothPoint(sd * .95, shoulderY + .25, .055), clothPoint(sd * 1.54, shoulderY - .9, .055),
+        clothPoint(sd * .35, shoulderY - 2.95, .06), clothPoint(sd * .63, shoulderY - 1.0, .075), shadeRGB(top.color, 1.055), [0, .1, 1]);
+      b.tri(clothPoint(sd * 1.54, shoulderY - .9, .06), clothPoint(sd * 1.37, shoulderY - .98, .09),
+        clothPoint(sd * .35, shoulderY - 2.95, .065), shadeRGB(top.color, .87), [0, 0, 1]);
+    }
+  }
+  // A hem, restrained folds and tiny buttons distinguish fabric from a solid plastic block.
+  softLoft(b, [sec(s0.y + .14, s0.a + .025, s0.c + .025, .8), sec(s0.y + .36, s0.a + .01, s0.c + .025, .8)], shadeRGB(lowerCol, .94), { caps: false });
+  for (const sd of [-1, 1]) {
+    const yy = hipY + .8;
+    b.tri(clothPoint(sd * d.waistHalf * .84, yy), clothPoint(sd * d.waistHalf * .4, yy + .27),
+      clothPoint(sd * d.waistHalf * .76, yy + .08, .065), shadeRGB(top.color, .94), [0, 0, 1]);
+  }
+  if (top.sleeves === 'long' && !top.sailor) {
+    for (let i = 0; i < 3; i++) {
+      const yy = shoulderY - 3.4 - i * .85;
+      ellipsoid(b, 0, yy, front(yy) + .035, .065, .065, .03, shadeRGB(top.color, .65), { seg: 6, rings: 4, smooth: true });
+    }
   }
   if (top.collar && !top.sailor) {
-    octBand(b, sec(shoulderY - 0.4, d.shoulderHalf * 0.5, dep * 0.7, 0.5), sec(shoulderY + 0.55, 1.65, 1.25, 0.6), top.collar);
+    softLoft(b, [sec(shoulderY + .25, d.neckR + .35, d.neckR + .24, .4),
+      sec(shoulderY + .63, d.neckR + .2, d.neckR + .15, .4)], top.collar, { caps: false });
   }
   if (top.sailor && top.collar) {
     // sailor collar: a wide flap over the shoulders and down the back, with a scarf at the front
@@ -392,12 +447,24 @@ function buildTorso(b: MeshBatch, d: Dims, o: Outfit, hipY: number, seated: bool
     const hem = top.length === 'smock' ? hipY * 0.38 : bottom.kind === 'longskirt' ? hipY * 0.3 : hipY * 0.52;
     const col = top.length === 'smock' ? top.color : bottom.color;
     const flare = bottom.kind === 'longskirt' || top.length === 'smock' ? 1.0 : 1.15;
-    octBand(b, { y: skirtTop, a: d.hipHalf + 0.15, c: dep + 0.1, k: 0.9 }, { y: hem, a: d.hipHalf + 0.15 + flare, c: dep + 0.1 + flare * 0.9, k: 1.3 }, col);
+    const skirtRings = [{ y: skirtTop, a: d.hipHalf + .15, c: dep + .1 },
+      { y: skirtTop - (skirtTop - hem) * .4, a: d.hipHalf + .15 + flare * .28, c: dep + .1 + flare * .26 },
+      { y: hem + .20, a: d.hipHalf + .15 + flare, c: dep + .1 + flare * .9 },
+      { y: hem, a: d.hipHalf + .15 + flare * .97, c: dep + .1 + flare * .89 }];
+    softLoft(b, skirtRings, col, { segments: 16, roundness: 2.5 });
     if (bottom.pleats && top.length !== 'smock') {
-      for (let i = -2; i <= 2; i++) plate(b, [i * 0.9, (skirtTop + hem) / 2, dep + 0.1 + 0.5 * flare + 0.06], [0.07, 0, 0], [0, (skirtTop - hem) / 2, 0], bottom.pleats, [0, 0.1, 1]);
+      for (let i = -2; i <= 2; i++) for (let j = 0; j < skirtRings.length - 1; j++) {
+        const at = (ring: typeof skirtRings[number], side: number): V3 => {
+          const u = (i * .9 + side * .045) / (d.hipHalf + .15);
+          return [u * ring.a, ring.y, ring.c * Math.max(0, 1 - Math.abs(u) ** 2.5) ** .4 + .025];
+        };
+        const upper = skirtRings[j]!, lower = skirtRings[j + 1]!;
+        b.quad(at(upper, -1), at(upper, 1), at(lower, 1), at(lower, -1), mixRGB(col, bottom.pleats, .65), [0, .1, 1]);
+      }
     }
   } else if (bottom.kind === 'tight') {
-    octBand(b, { y: hipY + 0.55, a: d.hipHalf + 0.12, c: dep + 0.1, k: 0.9 }, { y: hipY * 0.62, a: d.hipHalf, c: dep, k: 0.9 }, bottom.color);
+    softLoft(b, [{ y: hipY + .55, a: d.hipHalf + .12, c: dep + .1 },
+      { y: hipY - 1, a: d.hipHalf + .2, c: dep + .1 }, { y: hipY * .62, a: d.hipHalf * .96, c: dep }], bottom.color);
   }
   if (o.bag) {
     const bg = o.bag;
@@ -412,10 +479,29 @@ function buildTorso(b: MeshBatch, d: Dims, o: Outfit, hipY: number, seated: bool
         taperBox(b, shoulderY - 5.0, shoulderY - 0.5, { x0: -1.8, x1: 1.8, z0: bz - 2.1, z1: bz }, { x0: -1.6, x1: 1.6, z0: bz - 1.8, z1: bz }, bg.color, { top: shadeRGB(bg.color, 1.15) });
         boxC(b, 0, shoulderY - 4.0, bz - 2.2, 1.2, 0.8, 0.25, shadeRGB(bg.color, 0.8));
         break;
-      case 'shoulder':
-        boxC(b, -(d.hipHalf + 1.2), hipY - 0.2, -0.2, 0.55, 1.45, 2.0, bg.color, { top: shadeRGB(bg.color, 1.2) });
-        b.quad([1.6, shoulderY + 0.1, front(shoulderY) + 0.05], [2.3, shoulderY - 0.1, front(shoulderY) + 0.05], [-d.hipHalf - 0.7, hipY + 0.4, front(hipY + 0.5) + 0.05], [-d.hipHalf - 1.3, hipY + 0.5, front(hipY + 0.5) + 0.05], shadeRGB(bg.color, 0.75), [0, 0.1, 1]);
+      case 'shoulder': {
+        const bx = -(d.hipHalf + .67), bagZ = -.1;
+        const bag = (y: number, a: number, c: number) => ({ y: hipY + y, a, c, cx: bx, cz: bagZ });
+        softLoft(b, [bag(-1.43, .34, .84), bag(-1.20, .55, 1.18), bag(.55, .56, 1.22), bag(.99, .42, .96)], bg.color, { segments: 10 });
+        softLoft(b, [bag(.67, .57, 1.23), bag(.99, .43, .98)], bg.flap ?? shadeRGB(bg.color, 1.06), { segments: 10, caps: false });
+        // Short segments follow the clothing surface instead of cutting through
+        // the curved chest and reappearing as disconnected black fragments.
+        const strapPath = [[1.15, shoulderY + .15], [1.02, shoulderY - .55], [.35, hipY + d.torsoLen * .72],
+          [-.55, hipY + d.torsoLen * .48], [-1.45, hipY + d.torsoLen * .25], [bx, hipY + .82]];
+        const point = (index: number, side: number, facing: number): V3 => {
+          const [cx, yy] = strapPath[index]!, xx = cx! + side * .14;
+          const zz = index === strapPath.length - 1 ? 1.04 : front(yy!, xx) - lean(yy!) + .055;
+          return [xx, yy!, lean(yy!) + facing * zz];
+        };
+        const strap = shadeRGB(bg.color, .88);
+        for (const facing of [-1, 1]) {
+          for (let i = 0; i < strapPath.length - 1; i++) b.quad(point(i, -1, facing), point(i, 1, facing),
+            point(i + 1, 1, facing), point(i + 1, -1, facing), strap, [0, .1, facing]);
+          b.quad(point(0, -1, facing), point(0, 1, facing), [1.29, shoulderY + .32, lean(shoulderY)],
+            [1.01, shoulderY + .32, lean(shoulderY)], strap, [0, 1, facing]);
+        }
         break;
+      }
       default:
         break;
     }
@@ -478,7 +564,29 @@ export function buildSeated(o: Outfit, seatH: number): MeshBatch {
   const dep = d.depth;
   const thigh = d.legLen * 0.56;
   if (bottom.kind === 'skirt' || bottom.kind === 'longskirt') {
-    taperBox(b, hipY - 0.6, hipY + 1.9, { x0: -d.hipHalf - 0.5, x1: d.hipHalf + 0.5, z0: -dep, z1: thigh + 0.8 }, { x0: -d.hipHalf - 0.3, x1: d.hipHalf + 0.3, z0: -dep, z1: thigh + 0.3 }, bottom.color, { top: bottom.color });
+    // Rounded cloth follows the seated hip, lap and bent knees. Build along Z by
+    // rotating the shared loft; the original skirt envelope and seat pivot stay fixed.
+    const first = b.vertexCount, hemZ = thigh + .8, hemY = hipY + .1, hemWidth = d.hipHalf + .5;
+    softLoft(b, [
+      { y: -dep, a: d.hipHalf + .15, c: 1.25, cz: -(hipY + .65) },
+      { y: -.3, a: d.hipHalf + .3, c: 1.1, cz: -(hipY + .7) },
+      { y: thigh * .5, a: d.hipHalf + .4, c: 1.0, cz: -(hipY + .6) },
+      { y: thigh - .2, a: hemWidth, c: .8, cz: -(hipY + .2) },
+      { y: hemZ, a: hemWidth, c: .7, cz: -hemY },
+    ], bottom.color, { segments: 12, roundness: 2, caps: false });
+    for (let i = first; i < b.vertexCount; i++) {
+      const y = b.pos[i * 3 + 1]!, z = b.pos[i * 3 + 2]!;
+      const ny = b.nor[i * 3 + 1]!, nz = b.nor[i * 3 + 2]!;
+      b.pos[i * 3 + 1] = -z; b.pos[i * 3 + 2] = y;
+      b.nor[i * 3 + 1] = -nz; b.nor[i * 3 + 2] = ny;
+    }
+    // An open, narrow turned hem has a soft edge instead of a solid knee-facing cap.
+    const rim = (angle: number, inner: boolean): V3 => [Math.sin(angle) * (hemWidth - (inner ? .1 : 0)),
+      hemY + Math.cos(angle) * (.7 - (inner ? .08 : 0)), hemZ - (inner ? .1 : 0)];
+    for (let i = 0; i < 12; i++) {
+      const a = i * Math.PI / 6, nextAngle = (i + 1) * Math.PI / 6;
+      b.quad(rim(a, false), rim(nextAngle, false), rim(nextAngle, true), rim(a, true), shadeRGB(bottom.color, .96), [0, 0, 1]);
+    }
   }
   const pants = bottom.kind === 'trousers' || bottom.kind === 'tight';
   const legCol = pants ? bottom.color : o.skin;
@@ -486,18 +594,18 @@ export function buildSeated(o: Outfit, seatH: number): MeshBatch {
   const ankleY = -seatH + SHOE_H + 0.1;
   for (const sd of [-1, 1]) {
     const x = sd * d.hipX;
-    prism(b, [x, hipY + 0.25, -0.2], [x, hipY + 0.05, thigh], d.legR * 1.02, d.legR * 0.82, 8, legCol);
-    prism(b, [x, hipY + 0.05, thigh], [x, ankleY, thigh + 0.5], d.legR * 0.8, d.legR * 0.6, 8, lowLeg);
-    taperBox(b, -seatH, ankleY + 0.1, { x0: x - d.legR * 0.78, x1: x + d.legR * 0.78, z0: thigh - 0.7, z1: thigh + 3.5 }, { x0: x - d.legR * 0.66, x1: x + d.legR * 0.66, z0: thigh - 0.6, z1: thigh + 2.6 }, o.shoes);
+    seatedLimb(b, [x, hipY + .25, -.2], [x, hipY + .05, thigh], d.legR * 1.02, d.legR * .82, legCol);
+    seatedLimb(b, [x, hipY + .05, thigh], [x, ankleY, thigh + .5], d.legR * .8, d.legR * .6, lowLeg);
+    personShoe(b, x, -seatH, thigh + .5, d.legR, SHOE_H + .2, o.shoes);
   }
   // arms: upper arm down, forearm resting on the thighs
   for (const sd of [-1, 1]) {
     const sx = sd * (d.shoulderHalf + 0.15);
     const sy = info.shoulderY - SHOULDER_DROP;
     const elbowY = hipY + 1.9;
-    prism(b, [sx, sy, info.lean(sy)], [sx * 1.02, elbowY, info.lean(sy) + 0.5], d.armR, d.armR * 0.85, 6, o.top.color);
-    prism(b, [sx * 1.02, elbowY, info.lean(sy) + 0.5], [sd * 1.2, hipY + 1.6, thigh * 0.62], d.armR * 0.85, d.armR * 0.62, 6, o.top.sleeves === 'short' ? o.skin : o.top.color);
-    boxC(b, sd * 1.15, hipY + 1.6, thigh * 0.66, 0.5, 0.35, 0.65, o.skin);
+    seatedLimb(b, [sx, sy, info.lean(sy)], [sx * 1.02, elbowY, info.lean(sy) + .5], d.armR, d.armR * .85, o.top.color);
+    seatedLimb(b, [sx * 1.02, elbowY, info.lean(sy) + .5], [sd * 1.2, hipY + 1.6, thigh * .62], d.armR * .85, d.armR * .62, o.top.sleeves === 'short' ? o.skin : o.top.color);
+    ellipsoid(b, sd * 1.15, hipY + 1.6, thigh * .68, .47, .29, .69, o.skin, { seg: 10, rings: 6, smooth: true });
   }
   if (o.bag && (o.bag.kind === 'tote' || o.bag.kind === 'shop' || o.bag.kind === 'brief')) {
     boxC(b, d.hipHalf + 1.8, hipY + 0.8, thigh * 0.4, 0.8, 1.2, 1.7, o.bag.color, { top: shadeRGB(o.bag.color, 1.15) });

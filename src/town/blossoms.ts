@@ -48,13 +48,17 @@ float gpBlossomProjectedHeight = sqrt(gpBlossomWidth * gpBlossomWidth * dot(gpBl
 worldPos.xyz = finalWorld[3].xyz
   + gpBlossomRight * vGpBlossom.x * gpBlossomWidth
   + gpBlossomUp * vGpBlossom.y * gpBlossomProjectedHeight
-  - gpBlossomForward * gpBlossomWidth * .35;`,
+  - gpBlossomForward * gpBlossomWidth * .12;`,
     };
     if (type === 'fragment') return {
       CUSTOM_FRAGMENT_DEFINITIONS: 'varying vec2 vGpBlossom;',
       CUSTOM_FRAGMENT_BEFORE_LIGHTS: `
 float gpBlossomDepth = sqrt(max(0.0, 1.0 - dot(vGpBlossom, vGpBlossom)));
-normalW = normalize(gpBlossomRight * vGpBlossom.x + gpBlossomUp * vGpBlossom.y - gpBlossomForward * gpBlossomDepth);`,
+// Bunches share soft overhead light: a strong sphere normal on every card makes a
+// crown look like a stack of separately shaded balls, especially in an avenue.
+normalW = normalize(gpBlossomRight * vGpBlossom.x * .38
+  + gpBlossomUp * (.60 + vGpBlossom.y * .30)
+  - gpBlossomForward * (.70 + gpBlossomDepth * .16));`,
     };
     return null;
   }
@@ -65,8 +69,10 @@ export class BlossomClouds {
   private readonly crowns = new Map<MeshBatch, Crown[]>();
 
   record(batch: MeshBatch, first: number, x: number, y: number, z: number, radius: number, flat: number, cell: CellName): void {
-    const width = radius * (flat > 1.2 ? .85 : 1.48), height = radius * Math.min(flat, .8);
-    if (radius < 11.5 || height / width >= .65) return;
+    const width = radius * (flat > 1.2 ? .85 : 1.48), height = radius * Math.min(flat, 1.16);
+    // Fuller, smaller flower bunches use the same two-triangle path as the broad crowns.
+    // Only the narrow hanging sprays retain their stationary bowed geometry.
+    if (radius < 9.5 || flat > 1.2) return;
     let crowns = this.crowns.get(batch);
     if (!crowns) { crowns = []; this.crowns.set(batch, crowns); }
     crowns.push({ first, count: batch.vertexCount - first, x, y, z, width, height, cell });

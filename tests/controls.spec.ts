@@ -42,7 +42,7 @@ test('the camera stops before a wall and restores its zoom after leaving the wal
     player.position.z = 100; player.update(0); const far = camera.radius, farVisibility = player.root.visibility;
     scene.dispose(); engine.dispose(); return { near, far, nearVisibility, farVisibility };
   });
-  expect(result.near).toBeLessThan(12); expect(result.near).toBeGreaterThanOrEqual(6); expect(result.far).toBeCloseTo(60);
+  expect(result.near).toBeLessThan(12); expect(result.near).toBeGreaterThanOrEqual(6); expect(result.far).toBeCloseTo(78);
   expect(result.nearVisibility).toBe(0); expect(result.farVisibility).toBe(1);
 });
 

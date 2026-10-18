@@ -70,7 +70,12 @@ function side(b: MeshBatch, x0: number, plane: number, facing: 1 | -1, glass?: M
     glass.quad([a, low, plane], [c, low, plane], [c, high, plane], [a, high, plane], [.8, .91, 1], [0, 0, facing], [[a / 140, low / 140], [c / 140, low / 140], [c / 140, high / 140], [a / 140, high / 140]]);
     for (let i = first; i < glass.vertexCount; i++) glass.col[i * 4 + 3] = .38 + .3 * (glass.pos[i * 3 + 1]! - low) / (high - low);
   };
-  for (const [a, c] of WINDOWS) window(x0 + a, x0 + c, 19, 32);
+  for (const [a, c] of WINDOWS) {
+    window(x0 + a, x0 + c, 19, 32);
+    // Brushed sill and the narrow drip lip above the glazing break up the broad painted side.
+    quadX(b, plane + facing * .1, x0 + a - .3, x0 + c + .3, 18.55, 18.9, hex(0xa4aeae), facing);
+    quadX(b, plane + facing * .1, x0 + a - .3, x0 + c + .3, 32.25, 32.6, hex(0xb7c0be), facing);
+  }
   for (const d of DOORS) {
     const cx = x0 + d;
     for (const [l, r] of [[cx - 7, cx - 0.4], [cx + 0.4, cx + 7]] as [number, number][]) {
@@ -81,6 +86,10 @@ function side(b: MeshBatch, x0: number, plane: number, facing: 1 | -1, glass?: M
       window(l + 1.2, r - 1.2, 19, 31.5);
     }
     quadX(b, plane, cx - 0.4, cx + 0.4, 6.2, 36, DOOR_LINE, facing);
+    quadX(b, plane + facing * .09, cx - 7.2, cx - 7, 6.2, 36, hex(0x858e90), facing);
+    quadX(b, plane + facing * .09, cx + 7, cx + 7.2, 6.2, 36, hex(0x858e90), facing);
+    // Recessed hand grips remain below the windows, on each actual door leaf.
+    for (const hand of [-1, 1]) quadX(b, plane + facing * .12, cx + hand * 1.4 - .2, cx + hand * 1.4 + .2, 15, 18, hex(0x7b8586), facing);
   }
 }
 

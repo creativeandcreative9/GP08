@@ -50,10 +50,10 @@ export function createGlassMaterial(scene: Scene): StandardMaterial {
   tex.update(true);
 
   const m = new StandardMaterial('glassMat', scene);
-  m.alpha = .75;
+  m.alpha = .48;
   m.diffuseTexture = tex;
   m.useAlphaFromDiffuseTexture = true;
-  m.diffuseColor = Color3.White();
+  m.diffuseColor = new Color3(.78, .85, .91);
   m.specularColor = new Color3(0.85, 0.92, 1);
   m.specularPower = 110;
   m.emissiveColor = new Color3(0.06, 0.08, 0.1);

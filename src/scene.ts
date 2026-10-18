@@ -139,7 +139,10 @@ export function createScene(engine: Engine, canvas: HTMLCanvasElement): GameScen
   // town geometry casts and receives sun shadows; signs, decals and the terrain only receive them
   const townMeshes = town.root.getChildMeshes(true);
   const casters = townMeshes.filter((m) => m.name.startsWith('town_') || m.name.startsWith('forest_') || (m.name.startsWith('foliage_') && !m.metadata?.blossomVisible) || m.name.startsWith('topiary_') || m.name === 'stationroom' || m.name === 'stationmetal');
-  const receivers = [...townMeshes.filter((m) => m.name !== 'clouds' && m.name !== 'sea'), ...scene.meshes.filter((m) => m.name === 'terrain')];
+  // Camera-facing flower sheets keep their painted soft shade. Their stationary
+  // shadow proxies still shade the street, but would stamp grid-shaped self-shadows
+  // onto a sheet whose orientation differs from the proxy.
+  const receivers = [...townMeshes.filter((m) => m.name !== 'clouds' && m.name !== 'sea' && !m.name.startsWith('blossom-cloud-')), ...scene.meshes.filter((m) => m.name === 'terrain')];
   // Daylight through windows and the station lamps are gentler than the unoccluded outdoor sky.
   const hallInterior = townMeshes.filter(m => /^station(room|metal|floor|wall|tile|ceil|tactile|signs)$/.test(m.name));
   hemi.excludedMeshes.push(...hallInterior);
