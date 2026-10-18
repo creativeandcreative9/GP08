@@ -18,9 +18,9 @@
 
 ## 性能上の留意点
 
-車・人物などの形状追加により三角形数は増えている。スマホ向けlow画質のハードウェアスケーリングは従来の1.5から1.25へ変更され、画素描画の負荷が増える条件がある。一方、SSAO除去は負荷を減らす可能性がある。両者の影響を測定していないため、総合的な性能向上・悪化は断定しない。物理スマホでのFPS、発熱、操作感は未検証。
+車・人物などの形状追加により三角形数は増えている。スマホ向けlow画質のハードウェアスケーリングは従来の1.5から1.25へ変更され、画素描画の負荷が増える条件がある。一方、SSAO除去は負荷を減らす可能性がある。release-checkのクラウドHeadless Chrome計測は約0.62 FPS（low、390×844 viewport、312×675 render size、30.8秒中19 frames）だったが、この環境の値を実機性能へ一般化できない。物理スマホでのFPS・発熱・操作感は未検証であり、性能向上は断定しない。
 
-## 公開前の確認項目
+## 公開の確認項目
 
 各項目は今回の候補について実行し、結果と対象commit/buildを記録する。以前のスプリントやrelease-checkの記録を今回の成功証拠として流用しない。初回の61点は損失なしコンパクション前の評価。コンパクション後に固定5視点と通常shotを再確認し、同じ基準で採点した結果も61点だった。
 
@@ -35,12 +35,12 @@
 - [x] コンパクション後の固定5視点と通常shotを撮影・目視（09:59:43–10:03:49 UTC、eval/shot exit 0）。追加14視点はコンパクション前のまま
 - [x] 第46章の最終採点 — 61/100（車4、残る9項目3）
 - [ ] 品質目標90/100以上かつ全項目4以上 — **未達**
-- [ ] `npm run build`
-- [ ] 現候補から静的 `dist` を作り、release-checkを新規生成。ファイル数、HTML/JS/CSSのハッシュ、私有アセット要求、ページエラー、モバイルエラーを確認
-- [ ] 公開候補の昼・夜・雨・縦横画面を実画像で確認
-- [ ] source変更をcommitしてpush
-- [ ] 検証済みdistをGitHub Pagesへdeploy
-- [ ] 公開URLからHTML、JS、CSS、ハッシュ一覧を取得し、検証したdistとのハッシュ一致を確認
+- [x] `npm run build` — exit 0（2026-10-18 10:41:49 UTC、139 dist files）
+- [x] 静的 `dist` とrelease-checkの確認 — exit 0、dist 139ファイル、errors / privateRequests / mobileErrors はすべて空、builtState.debugScene=false・saveVersion=3
+- [x] 公開候補の昼・夜・雨・縦横画面を実画像で確認 — 6枚すべて確認（day/night/rain/portrait/landscape/performance）
+- [x] source変更をcommitしてpush — `3efb7200d56f57c0a9579e9edbd4708ec6d03b24`（tree `1da4f2942697eb453a0eec3f82eea48f0130bc2e`）
+- [x] 検証済みdistをGitHub Pagesへdeploy — 2026-10-18 10:52:21 UTC、gh-pages commit `d0a2ba8cf3e52b37421a697f8cbf2dfdd778e6e0`、141 site files
+- [x] 公開URLからHTML、JS、CSS、ハッシュ一覧を取得し、検証したdistとのハッシュ一致を確認 — 2026-10-18 10:53:00 UTC、139 dist pathsと通常URLがすべてHTTP 200、SHA-256一致
 
 公開先: https://creativeandcreative9.github.io/GP08/
 
@@ -54,14 +54,16 @@
 
 全224件の実行は223成功・1失敗（32.7分）。失敗は `tests/train.spec.ts` の `Math.max(...mesh.idx)` が147,042個の引数を渡し、JavaScriptの呼出し上限に当たった `RangeError`。最大indexとx座標範囲を順次走査へ変更し、非負整数indexの検査も追加した。ガラスの透明度・高さ・位置・UV・車体の範囲の条件は維持し、関連17件の再実行が成功した。成功済み223件と合わせて全検査項目を確認したが、修正後に全224件を一括再実行したとは扱わない。
 
-この修正で変わった入力は `tests/train.spec.ts` のみで、残る200入力はSHA-256が一致した。アプリ本体・描画入力は撮影・全テスト時から変更していない。公開候補の201入力manifestは `e1d6b3a24c527b72b5ff520bfba84a37fc42cb161942cd671b9507f326276f9d`。ビルドの検証記録には全体実行と修正後の関連実行を分けて保存する。
+この修正で変わった入力は `tests/train.spec.ts` のみで、残る200入力はSHA-256が一致した。アプリ本体・描画入力は撮影・全テスト時から変更していない。公開候補の201入力manifestは `e1d6b3a24c527b72b5ff520bfba84a37fc42cb161942cd671b9507f326276f9d`。最終検証記録は一括224件通過ではなく、223件の全体実行と修正後17件の関連実行を区別している。
 
-build、dist/release-check、commit/push、deploy、公開hash一致は未完了。物理スマホのFPS・発熱・操作感も未検証。
+source commit/push、build、静的release validation、GitHub Pages deploy、公開hash照合は完了。最終6枚を実際に確認し、ページエラー・非公開要求・モバイル側エラーは0件、touchDistanceは22.7452、builtState.debugScene=false。性能計測はクラウドHeadless Chromeで約0.62 FPSにとどまり、物理スマホのFPS・発熱・操作感は未検証。
+
+build provenance SHA-256は `4c62fc00f1559642193d6d33aee8e992dddcfaa87e6ee557b1ca3bf33b2b5791`。記録されたsource commit/treeは `3efb7200d56f57c0a9579e9edbd4708ec6d03b24` / `1da4f2942697eb453a0eec3f82eea48f0130bc2e`、入力manifestは上記e1d6…276f9d、build完了は2026-10-18 10:41:49 UTC。139ファイルを生成し、entrypointは `assets/index-BHM8gGZe.js`（SHA-256 `122dca344d71d4d7b1b4bf6ce13528944ef28e9b502ad5f3a06555651bbbb921`）と `assets/index-BdKNnKp3.css`（SHA-256 `c94934a03ab22951edea67941f1988a89f308e5ad9c09cd26fdbf9b4a628e54d`）。
 
 前回ログでは町が426メッシュ・2,016,496頂点・1,187,326三角形、生活モデルが76メッシュ・表示テンプレート155,093頂点だった。生活モデルのテンプレートは損失なしで68,231頂点へコンパクト化され、三角形数81,659は変化していない。CPU側で数えた頂点・index bufferの実データ量は6,693,738 bytesから3,219,258 bytesへ減少（行列とテクスチャは含まない）。これはFPSや実機性能の測定ではない。
 
-統合テストの許容上限は従来の60,000から70,000頂点へ変更し、詳細形状のまま約56%削減した68,231頂点を収める設定とした。したがって旧60,000上限を満たしたとは記録しない。メッシュ上限は80。車・人物などの三角形増加とスマホ向けlow画質のスケーリング変更（1.5から1.25）は描画負荷を増やし得る一方、SSAO除去は負荷を減らし得る。性能測定は未実施なので、性能向上は主張しない。
+統合テストの許容上限は従来の60,000から70,000頂点へ変更し、詳細形状のまま約56%削減した68,231頂点を収める設定とした。したがって旧60,000上限を満たしたとは記録しない。メッシュ上限は80。車・人物などの三角形増加とスマホ向けlow画質のスケーリング変更（1.5から1.25）は描画負荷を増やし得る一方、SSAO除去は負荷を減らし得る。クラウドHeadless Chromeの性能値は上記のとおり。物理スマホでの性能は未測定であり、性能向上は主張しない。
 
-公開用source commit後にbuild、build provenance、release-checkを作成し、公開とURL上のhash検証を行う。公開スクリプトには凍結manifest・ソースcommit/tree・全dist hashの一致確認を組み込んだ。これらの工程は未完了であり、後続の記録で結果を分けて追記する。
+公開スクリプトには凍結manifest・ソースcommit/tree・全dist hashの一致確認を組み込んだ。モバイル検査を含むrelease validationは2026-10-18 10:51 UTCに完了し、build entrypoint hashはprovenanceと一致した。build provenance SHA-256は `4c62fc00f1559642193d6d33aee8e992dddcfaa87e6ee557b1ca3bf33b2b5791`、入力manifest SHA-256は `e1d6b3a24c527b72b5ff520bfba84a37fc42cb161942cd671b9507f326276f9d`。公開記録は `/workspace/gp08-cloud-setup/town-quality-deployment.json`、公開検証は `/workspace/gp08-cloud-setup/town-quality-public-verification.json` にある。deployment source commit/treeは `3efb7200d56f57c0a9579e9edbd4708ec6d03b24` / `1da4f2942697eb453a0eec3f82eea48f0130bc2e`、gh-pages commit/treeは `d0a2ba8cf3e52b37421a697f8cbf2dfdd778e6e0` / `ed13cb7cba46d9c69b350d976050f44b3c483dc1`。公開先 `https://creativeandcreative9.github.io/GP08/` の確認は10:53:00 UTCに完了。139 dist filesを全件照合し、HTML・主JS・CSS・ハッシュ一覧は検証済みbuildと一致した。
 
-評価画像、ユーザー提示の参考画像、スクリーンショットはこの文書に埋め込まない。実際の結果が得られた後、対象commit、build識別子、画像の場所、採点根拠、各確認の成否を追記する。
+評価画像、ユーザー提示の参考画像、スクリーンショットはこの文書に埋め込まない。今回の公開画面証拠は `screenshots/release-town-quality/` に保存した（day、night、rain、portrait、landscape、performance、canvas、release-check）。
