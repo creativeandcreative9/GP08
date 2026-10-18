@@ -28,7 +28,11 @@
 証跡は `/workspace/gp08-cloud-setup/` の `depth-tests-final.log`、`depth-tests-corrected.log`、`depth-guidance-final.log`、`depth-build-corrected.log`、`depth-release-corrected.log`、`depth-release-check-final.json`、`depth-evaluation-independent.json`、`depth-art-evaluation-final.json`。画像・ログ・私有資産は公開ソースに含めない。夜空の色段差、海面の簡素さ、同じ分に起きた記録の細かい順序は残る限界。人間の感情・音の試聴・スマホ実機のFPSと発熱は未測定。
 
 <!-- depth-public -->
-公開反映はこれから実施する。上記はローカルで本番用ファイルを配信した検査結果であり、GitHub Pages更新済みとはしない。
+[ブラウザで遊ぶ](https://creativeandcreative9.github.io/GP08/)。住人短編・散歩テーマ・絵はがき・鑑賞視点を含む実装と評価文書を `590302f6a6f3d4ff537437b584c740c8be46daf4` として指定ブランチ `claude/zen-ptolemy-pa63je` へコミット・プッシュした。検証済みビルド158ファイル＋ハッシュ一覧＋.nojekyllの160ファイルを、公開コミット `86c5c00c64bac3d3f8eac53d2640ff80d395e644` としてgh-pagesへ通常のプッシュで反映。ソースのチェックアウトを切り替えず、既存履歴を保持した。
+
+[GitHub Pagesの公開処理](https://github.com/creativeandcreative9/GP08/actions/runs/39095182998)は成功。2026年10月18日 12:54（日本時間）に、HTML・主JS・CSS・ハッシュ一覧をHTTP 200で取得し、検証済みビルドとの一致を確認した。取得したハッシュ一覧の158ファイル分もローカルのビルドと全照合した。確認用クエリ付きに加え、通常の `/GP08/` URLのHTMLもHTTP 200と同一内容を確認。これは配信ファイルの検証であり、スマホ実機で操作・性能を測定した結果ではない。
+
+公開証跡は `/workspace/gp08-cloud-setup/depth-deployment.json`、`depth-pages-result.json`、`depth-public-verification.json`。公開後の文書追記はアプリ・テスト・検証済みビルドを変更しない。
 <!-- /depth-public -->
 
 ## 前回の体験改善（100点評価・履歴）
