@@ -103,6 +103,8 @@ const journalTime = (minute: number): string => {
 };
 const journalDate = (day: number, minute: number): string => `${day}日目 ${journalTime(minute)}`;
 const WEATHER_COPY: Record<PostcardWeather, string> = { clear: '晴れ', cloudy: '曇り', rain: '雨' };
+const hungerValue = (value: number): number => Math.round(Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0)));
+const hungerLabel = (value: number): string => value < 30 ? '満腹' : value < 70 ? '小腹' : '空腹';
 let journalId = 0;
 
 /** A decorative sketch, not a captured game image. All geometry is local, with no image requests. */
@@ -185,6 +187,12 @@ export class GameUI {
   readonly dialog = el('dialog', '', 'life-dialog');
   private readonly clock = el('span', '', 'life-clock');
   private readonly money = el('strong');
+  private readonly hunger: HTMLButtonElement;
+  private readonly hungerNumber = el('span', '', 'life-hunger-number');
+  private readonly hungerState = el('span', '', 'life-hunger-state');
+  private readonly sprint = el('span', '', 'life-sprint');
+  private sprintMultiplier = 1;
+  private sprinting = false;
   private readonly goal = el('div', '', 'life-goal');
   private readonly navigation = el('p', '', 'life-navigation');
   private readonly restStatus = el('p', '', 'life-rest-status');
@@ -208,7 +216,16 @@ export class GameUI {
     const identity = el('div', '', 'life-identity');
     const name = el('span', '桜の街で、ひと休み', 'life-brand');
     const status = el('div', '', 'life-status');
-    status.append(this.clock, this.money);
+    const resources = el('div', '', 'life-resources');
+    resources.append(this.money, this.sprint);
+    this.hunger = this.button('', actions.inventory);
+    this.hunger.className = 'life-hunger';
+    this.hunger.title = '空腹度は0が満腹、100が空腹。押すと持ち物を開きます。';
+    this.hunger.append(this.hungerNumber, this.hungerState);
+    this.sprint.hidden = true;
+    this.sprint.title = '走り続けると10秒で2倍、20秒で3倍。止まると1倍に戻ります。';
+    status.append(this.clock, resources, this.hunger);
+    this.vitals(0, 1, false);
     identity.append(name, status);
     const toolbar = el('nav', '', 'life-toolbar');
     toolbar.setAttribute('aria-label', '街歩きのメニュー');
@@ -259,6 +276,7 @@ export class GameUI {
 
   update(p: Progress): void {
     this.money.textContent = `所持金 ${p.money.toLocaleString('ja-JP')}円`;
+    this.vitals(p.hunger, this.sprintMultiplier, this.sprinting);
     const offer = p.errand ? errandFor(p.errand.resident) : undefined;
     if (offer && p.errand) {
       this.goal.replaceChildren(el('strong', '街のおつかい'), el('p', `${residentName(p.errand.resident)}からのお願い`),
@@ -292,6 +310,24 @@ export class GameUI {
     const text = bench ? `${bench}に座る [E]` : contact ? `${contact.name}${contact.kind === 'shop' ? 'で買い物' : 'と話す'} [E]` : '人やお店、ベンチに近づこう [E]';
     if (this.prompt.textContent !== text) this.prompt.textContent = text;
     this.prompt.disabled = !contact && !bench;
+  }
+
+  /** Quiet, compact readings: rapid simulation updates never become live announcements. */
+  vitals(hunger: number, runMultiplier: number, running: boolean): void {
+    const value = hungerValue(hunger), label = hungerLabel(value);
+    const text = `空腹 ${value}/100`;
+    if (this.hungerNumber.textContent !== text) {
+      this.hungerNumber.textContent = text;
+      this.hungerState.textContent = label;
+      this.hunger.dataset.level = value < 30 ? 'full' : value < 70 ? 'peckish' : 'hungry';
+      this.hunger.setAttribute('aria-label', `空腹度 ${value} / 100、${label}。持ち物を開く`);
+    }
+    this.sprintMultiplier = Math.max(1, Math.min(3, Number.isFinite(runMultiplier) ? runMultiplier : 1));
+    this.sprinting = running;
+    this.sprint.hidden = !running;
+    const sprintText = `走る ×${this.sprintMultiplier.toFixed(1)}`;
+    if (this.sprint.textContent !== sprintText) this.sprint.textContent = sprintText;
+    this.sprint.style.setProperty('--sprint-progress', `${(this.sprintMultiplier - 1) * 50}%`);
   }
 
   resting(name?: string): void {
@@ -597,7 +633,11 @@ export class GameUI {
     for (const id of ITEM_IDS.filter(id => ITEMS[id].shop === contact.id)) {
       const button = this.button('', () => { result.textContent = purchase(id).message; refresh(); });
       buttons.push({ id, button });
-      list.append(button);
+      const entry = el('div', '', 'life-food-entry');
+      const relief = el('small', `${ITEMS[id].verb}と空腹度 −${ITEMS[id].hungerRelief}`, 'life-food-relief');
+      relief.id = `life-food-relief-${++journalId}`;
+      button.setAttribute('aria-describedby', relief.id);
+      entry.append(button, relief); list.append(entry);
     }
     refresh();
     this.content.append(list, el('small', '持ち物が99個になるか、お金が足りない商品は購入できません。'), result);
@@ -644,24 +684,36 @@ export class GameUI {
 
   inventory(p: Progress, use: (id: ItemId) => ActionResult): void {
     this.open('持ち物');
+    const hunger = el('p', '', 'life-hunger-summary');
+    hunger.setAttribute('role', 'status');
     const list = el('div', '', 'life-products');
     const empty = el('p', 'まだ何も持っていません。お店でおやつを買ってみよう。');
     const result = el('p');
     result.setAttribute('role', 'status');
     const refresh = (): void => {
+      const value = hungerValue(p.hunger);
+      hunger.textContent = `いまの空腹度 ${value} / 100 · ${hungerLabel(value)}`;
       list.replaceChildren();
       for (const id of ITEM_IDS.filter(id => p.inventory[id] > 0)) {
         const item = ITEMS[id];
-        list.append(this.button(`${item.name}を${item.verb}（${p.inventory[id]}個）`, () => {
+        const button = this.button(`${item.name}を${item.verb}（${p.inventory[id]}個）`, () => {
           result.textContent = use(id).message;
           refresh();
           this.close.focus();
-        }));
+        });
+        const entry = el('div', '', 'life-food-entry');
+        const relief = el('small', `空腹度 −${item.hungerRelief}`, 'life-food-relief');
+        relief.id = `life-food-relief-${++journalId}`;
+        button.setAttribute('aria-describedby', relief.id);
+        entry.append(button, relief); list.append(entry);
       }
       empty.hidden = ITEM_IDS.some(id => p.inventory[id] > 0);
     };
     refresh();
-    this.content.append(empty, list, result);
+    this.content.append(hunger, el('p', '0が満腹、100が空腹です。街で過ごすと少しずつ増え、走るとさらに増えます。空腹でも走れます。手帳や会話を開いている間は止まります。', 'life-vitals-help'),
+      empty, list, result,
+      el('p', '食べ物がなくても、自宅で無料の食事ができます。家で眠ると、朝食をとって満腹で次の朝を迎えます。', 'life-vitals-help'),
+      el('p', '走り続けると10秒で2倍、20秒で3倍に。止まると1倍に戻ります。', 'life-vitals-help'));
     this.close.focus();
   }
 

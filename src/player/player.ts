@@ -4,6 +4,7 @@ import { type Scene } from '@babylonjs/core/scene.js';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector.js';
 import type { MmdModel } from 'babylon-mmd/esm/Runtime/mmdModel';
 import { Gait } from './gait';
+import { SprintPace } from './sprint';
 import type { RestPlace } from '../gameplay/rest';
 
 export interface Footprint {
@@ -49,6 +50,11 @@ export class Player {
   private appliedRadius = 60;
   private heading = 0;
   private speed = 0;
+  private baseSpeed = 0;
+  private readonly sprint = new SprintPace();
+  private movingRun = false;
+  private readonly lastPosition = new Vector3();
+  private discardRunTime = false;
   private controlsEnabled = true;
   private restingAt: RestPlace | null = null;
   private readonly heightAt: (x: number, z: number) => number;
@@ -66,6 +72,7 @@ export class Player {
     this.gait = opts.avatar?.gait ?? new Gait(model!.mesh.metadata.skeleton.bones);
 
     this.root.position.set(opts.spawn.x, this.heightAt(opts.spawn.x, opts.spawn.z), opts.spawn.z);
+    this.lastPosition.copyFrom(this.root.position);
     this.root.rotationQuaternion = null;
     const hallLight = scene.getLightByName('station-light');
     if (hallLight) hallLight.includedOnlyMeshes.push(this.root, ...this.root.getChildMeshes());
@@ -88,8 +95,17 @@ export class Player {
       if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) e.preventDefault();
       this.keys.add(e.code);
     }, { signal: listeners.signal });
-    window.addEventListener('keyup', (e) => this.keys.delete(e.code), { signal: listeners.signal });
-    window.addEventListener('blur', () => { this.keys.clear(); this.setTouch(0, 0); }, { signal: listeners.signal });
+    window.addEventListener('keyup', (e) => {
+      this.keys.delete(e.code);
+      this.resetIfNotRunning();
+    }, { signal: listeners.signal });
+    const suspend = () => {
+      this.clearMotion();
+      // The first resumed engine delta can include the time spent away from the game.
+      this.discardRunTime = true;
+    };
+    window.addEventListener('blur', suspend, { signal: listeners.signal });
+    document.addEventListener('visibilitychange', suspend, { signal: listeners.signal });
 
     // Pose the bones before the MMD runtime solves IK and physics for this frame.
     scene.onBeforeAnimationsObservable.add(() => this.update(scene.getEngine().getDeltaTime() / 1000), undefined, true);
@@ -97,7 +113,20 @@ export class Player {
 
   /** Current ground speed (units per second). */
   get currentSpeed(): number {
+    this.checkTeleport();
     return this.speed;
+  }
+
+  /** Current continuous-run multiplier, relative to the original 40-unit run speed. */
+  get runMultiplier(): number {
+    this.checkTeleport();
+    return this.sprint.multiplier;
+  }
+
+  /** True only while run input produces real movement; pushing a wall does not count. */
+  get running(): boolean {
+    this.checkTeleport();
+    return this.movingRun;
   }
 
   get position(): Vector3 {
@@ -113,11 +142,11 @@ export class Player {
   }
 
   sit(bench: RestPlace): void {
-    this.keys.clear();
-    this.speed = 0;
+    this.clearMotion();
     this.restingAt = bench;
     this.heading = Math.atan2(-bench.fx, -bench.fz);
     this.root.position.set(bench.x, bench.y, bench.z);
+    this.lastPosition.copyFrom(this.root.position);
     this.root.rotation.y = this.heading;
     this.gait.sit(0, bench.seatHeight);
     this.updateCameraTarget();
@@ -129,9 +158,9 @@ export class Player {
     if (!this.restingAt) return;
     const p = this.restingAt.exit;
     this.root.position.set(p.x, p.y, p.z);
+    this.lastPosition.copyFrom(this.root.position);
     this.restingAt = null;
-    this.keys.clear();
-    this.speed = 0;
+    this.clearMotion();
     this.gait.update(0, 0);
     this.updateCameraTarget();
     this.resetPhysics();
@@ -145,7 +174,8 @@ export class Player {
   }
 
   setTouch(x: number, z: number, run = false): void {
-    this.touch = this.controlsEnabled ? { x, z, run } : { x: 0, z: 0, run: false };
+    this.touch = this.controlsEnabled && !this.restingAt && !document.hidden ? { x, z, run } : { x: 0, z: 0, run: false };
+    this.resetIfNotRunning();
   }
 
   enterRoom(x: number, z: number, height: number, obstacles: readonly Footprint[]): void {
@@ -153,7 +183,8 @@ export class Player {
     this.outside = { x: this.position.x, z: this.position.z };
     this.room = { height, obstacles };
     this.root.position.set(x, height, z);
-    this.keys.clear(); this.setTouch(0, 0); this.speed = 0;
+    this.lastPosition.copyFrom(this.root.position);
+    this.clearMotion();
     this.updateCameraTarget(); this.resetPhysics();
   }
 
@@ -163,16 +194,43 @@ export class Player {
     const p = this.outside;
     this.room = null; this.outside = null;
     this.root.position.set(p.x, this.heightAt(p.x, p.z), p.z);
-    this.keys.clear(); this.setTouch(0, 0); this.speed = 0;
+    this.lastPosition.copyFrom(this.root.position);
+    this.clearMotion();
     this.updateCameraTarget(); this.resetPhysics();
   }
 
   /** Dialogs stop movement immediately and discard held keys until the next key press. */
   setControlsEnabled(enabled: boolean): void {
     this.controlsEnabled = enabled;
+    this.clearMotion();
+  }
+
+  private resetSprint(): void {
+    this.sprint.reset();
+    this.movingRun = false;
+  }
+
+  private clearMotion(): void {
     this.keys.clear();
     this.touch = { x: 0, z: 0, run: false };
-    this.speed = 0;
+    this.baseSpeed = this.speed = 0;
+    this.resetSprint();
+  }
+
+  private resetIfNotRunning(): void {
+    const want = this.input();
+    if (!want.run || (want.x === 0 && want.z === 0)) {
+      this.resetSprint();
+      this.speed = this.baseSpeed;
+    }
+  }
+
+  private checkTeleport(): void {
+    if (Vector3.DistanceSquared(this.root.position, this.lastPosition) > 0.000001) {
+      this.baseSpeed = this.speed = 0;
+      this.resetSprint();
+      this.lastPosition.copyFrom(this.root.position);
+    }
   }
 
   private input(): { x: number; z: number; run: boolean } {
@@ -195,7 +253,16 @@ export class Player {
   }
 
   update(dt: number): void {
-    dt = Math.min(dt, 0.1);
+    this.checkTeleport();
+    const elapsed = Number.isFinite(dt) && dt > 0 ? dt : 0;
+    dt = Math.min(elapsed, 0.1);
+    const runTime = this.discardRunTime ? 0 : elapsed;
+    this.discardRunTime = false;
+    if (!this.controlsEnabled || document.hidden) {
+      this.clearMotion();
+      this.updateCameraTarget();
+      return;
+    }
     if (this.restingAt) {
       this.gait.sit(dt, this.restingAt.seatHeight);
       this.updateCameraTarget();
@@ -203,9 +270,13 @@ export class Player {
     }
     const want = this.input();
     const moving = want.x !== 0 || want.z !== 0;
+    const wantsRun = moving && want.run;
+    if (!wantsRun) this.resetSprint();
     const targetSpeed = moving ? (want.run ? RUN_SPEED : WALK_SPEED) : 0;
-    this.speed += (targetSpeed - this.speed) * Math.min(dt * 6, 1);
-    if (this.speed < 0.05 && !moving) this.speed = 0;
+    // Smooth the starting speed, not the multiplier: after 10 s the actual speed is 80.
+    this.baseSpeed += (targetSpeed - this.baseSpeed) * Math.min(dt * 6, 1);
+    if (this.baseSpeed < 0.05 && !moving) this.baseSpeed = 0;
+    this.speed = this.baseSpeed * this.sprint.multiplier;
 
     if (moving) {
       // The model faces −Z locally, so yaw θ points it at (−sinθ, −cosθ).
@@ -216,31 +287,65 @@ export class Player {
     }
     this.root.rotation.y = this.heading;
 
+    const oldX = this.root.position.x, oldZ = this.root.position.z;
     if (this.speed > 0) {
       const dx = -Math.sin(this.heading) * this.speed * dt;
       const dz = -Math.cos(this.heading) * this.speed * dt;
       this.moveTo(this.root.position.x + dx, this.root.position.z + dz);
     }
     this.root.position.y = this.room?.height ?? this.heightAt(this.root.position.x, this.root.position.z);
+    if (elapsed > 0) {
+      const moved = Math.hypot(this.root.position.x - oldX, this.root.position.z - oldZ) > 0.00001;
+      this.movingRun = wantsRun && moved;
+      this.sprint.advance(runTime, this.movingRun);
+      if (!moved) this.baseSpeed = 0;
+      this.speed = moved ? this.baseSpeed * this.sprint.multiplier : 0;
+    }
+    this.lastPosition.copyFrom(this.root.position);
 
-    this.gait.update(dt, this.speed);
+    // Faster travel should still look like a readable running stride, not frantic feet.
+    this.gait.update(dt, Math.min(this.speed, RUN_SPEED * 1.2));
     this.updateCameraTarget();
   }
 
   /** Move to x,z, sliding along building footprints instead of entering them. */
   private moveTo(x: number, z: number): void {
     const p = this.root.position;
-    const blocked = (px: number, pz: number): boolean =>
-      (this.room?.obstacles ?? this.obstacles).some(
-        (o) => px > o.minX - RADIUS && px < o.maxX + RADIUS && pz > o.minZ - RADIUS && pz < o.maxZ + RADIUS,
-      );
-    if (!blocked(x, z)) {
-      p.x = x;
-      p.z = z;
-    } else if (!blocked(x, p.z)) {
-      p.x = x;
-    } else if (!blocked(p.x, z)) {
-      p.z = z;
+    // Cull the town once for this move, before checking each short step and axis slide.
+    const minX = Math.min(p.x, x) - RADIUS, maxX = Math.max(p.x, x) + RADIUS;
+    const minZ = Math.min(p.z, z) - RADIUS, maxZ = Math.max(p.z, z) + RADIUS;
+    const obstacles = (this.room?.obstacles ?? this.obstacles).filter(o =>
+      o.maxX > minX && o.minX < maxX && o.maxZ > minZ && o.minZ < maxZ);
+    if (!obstacles.length) { p.x = x; p.z = z; return; }
+    // Check the whole segment, including shallow corner crossings whose endpoints are clear.
+    const blocked = (px: number, pz: number): boolean => obstacles.some((o) => {
+      let near = 0, far = 1;
+      for (const [start, delta, low, high] of [
+        [p.x, px - p.x, o.minX - RADIUS, o.maxX + RADIUS],
+        [p.z, pz - p.z, o.minZ - RADIUS, o.maxZ + RADIUS],
+      ]) {
+        if (Math.abs(delta!) < 1e-10) {
+          if (start! <= low! || start! >= high!) return false;
+        } else {
+          const a = (low! - start!) / delta!, b = (high! - start!) / delta!;
+          near = Math.max(near, Math.min(a, b));
+          far = Math.min(far, Math.max(a, b));
+        }
+      }
+      return near < far && far > 0 && near < 1;
+    });
+    const steps = Math.max(1, Math.ceil(Math.hypot(x - p.x, z - p.z) / (RADIUS / 2)));
+    const dx = (x - p.x) / steps, dz = (z - p.z) / steps;
+    for (let i = 0; i < steps; i++) {
+      const nextX = p.x + dx, nextZ = p.z + dz;
+      if (!blocked(nextX, nextZ)) {
+        p.x = nextX;
+        p.z = nextZ;
+      } else if (!blocked(nextX, p.z)) {
+        p.x = nextX;
+      } else if (!blocked(p.x, nextZ)) {
+        p.z = nextZ;
+      }
     }
   }
 

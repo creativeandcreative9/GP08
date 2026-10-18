@@ -13,7 +13,7 @@ import { PerformanceCheck } from './gameplay/performance';
 import { touchControls } from './player/touch';
 import type { GameScene } from './scene';
 import type { Player } from './player/player';
-import { acceptErrand, buy, cancelErrand, consume, deliverErrand, greet, newProgress, parseProgress, SAVE_KEY, type ItemId, type Progress } from './gameplay/state';
+import { acceptErrand, buy, cancelErrand, consume, deliverErrand, greet, homeMeal, newProgress, parseProgress, SAVE_KEY, type ItemId, type Progress } from './gameplay/state';
 import { errandFor, residentName, validResident } from './gameplay/errands';
 import { inReach, restorePosition, shopContacts, type Contact } from './gameplay/world';
 import { GameUI, type JournalAction, type JournalRecord, type PostcardScene } from './gameplay/ui';
@@ -26,6 +26,7 @@ import { journeyCards, journeyCompletion, nextJourneySuggestion, observeJourney,
 import { acceptStory, completeStory, observeStory, storyCards, storyOffer, storyReunion, type StoryContext, type StoryId } from './gameplay/stories';
 import { chooseExploration, explorationSuggestion, explorationThemes, observationCards, presentObservation, recordObservation, setFavorite, type ExplorationPlace } from './gameplay/exploration';
 import { DiscoveryVistas } from './gameplay/discovery-vistas';
+import { advanceHunger } from './gameplay/hunger';
 
 /** Coordinates proximity, the local economy, dialog controls and browser-local persistence. */
 export class Gameplay {
@@ -54,6 +55,7 @@ export class Gameplay {
   private lastCheck = 0;
   private lastSave = performance.now();
   private resumeAvailable = false;
+  private skipWorldTick = false;
 
   constructor(private readonly game: GameScene, private readonly player: Player, canvas: HTMLCanvasElement) {
     let loaded: Progress | null = null;
@@ -135,7 +137,12 @@ export class Gameplay {
     window.addEventListener('storage', this.storageChanged);
     const observer = game.scene.onBeforeRenderObservable.add(() => {
       const now = performance.now();
-      if (!document.hidden && !this.ui.dialog.open && !this.vistas.activeId) advanceClock(this.progress.life, Math.min(2, game.scene.getEngine().getDeltaTime() / 1000));
+      if (!document.hidden && !this.ui.dialog.open && !this.vistas.activeId && !this.skipWorldTick) {
+        const seconds = Math.min(2, game.scene.getEngine().getDeltaTime() / 1000);
+        advanceClock(this.progress.life, seconds);
+        advanceHunger(this.progress, seconds, this.player.running ? this.player.runMultiplier : 0);
+      }
+      if (!document.hidden) this.skipWorldTick = false;
       this.environment.update(this.progress.life, this.interiors.indoor);
       this.collectibles.update(this.progress.life, this.interiors.indoor);
       game.life?.setTime(this.progress.life.minute);
@@ -175,6 +182,7 @@ export class Gameplay {
     this.syncResidentDestination();
     this.vistas.update(this.progress.stories.arcs.filter(arc => arc.stage === 'completed').map(arc => arc.id));
     this.ui.time(clockText(this.progress.life));
+    this.ui.vitals(this.progress.hunger, this.player.runMultiplier, this.player.running);
     this.ui.root.toggleAttribute('data-night', isEvening(this.progress.life.minute));
     this.recordMemories();
     this.updateContext();
@@ -325,9 +333,10 @@ export class Gameplay {
       actionLabel: '自宅への帰り道を案内', onAction: () => { this.chooseDestination('home'); this.progress.preferences.nightHintDay = nightEpisode(life.day, life.minute); this.contextKey = ''; this.updateContext(); this.save(); this.ui.message(this.progress.preferences.wayfinding ? '矢印は安全な道の次の角を示します。自宅の入口で操作ボタンを押すと入れます。' : '自宅まで文字と地図で案内します。矢印は「設定」でオンにできます。入口で操作ボタンを押すと家に入れます。'); },
       secondaryLabel: '夜の散歩を続ける', onSecondary: () => { this.progress.preferences.nightHintDay = nightEpisode(life.day, life.minute); this.contextKey = ''; this.updateContext(); this.save(); this.ui.message('ゆっくりどうぞ。帰りたくなったら「暮らし」から自宅へ案内できます。'); } });
     else if (home) this.ui.contextHint({ title: this.justSlept ? '新しい朝、今日はどこへ' : 'おかえりなさい。家でひと休み',
-      body: this.justSlept ? 'おつかいも持ち物も、昨日の続きから。外に出て、今日の街を歩いてみよう。' : '左奥の布団で眠ると次の朝8時になります。ここから「朝まで休む」を選んでも眠れます。',
+      body: this.justSlept ? '朝ごはんを食べて、お腹も満たされました。おつかいも持ち物も、昨日の続きから。' : '左奥の布団で眠ると次の朝8時になり、朝ごはんも食べられます。今すぐ食べたいときは、無料の軽食をどうぞ。',
       actionLabel: this.justSlept ? '街へ出る' : '朝まで休む',
-      onAction: () => { if (this.justSlept) { this.interiors.leave(); this.justSlept = false; this.contextKey = ''; this.updateNearby(); this.save(); } else this.sleep(); } });
+      onAction: () => { if (this.justSlept) { this.interiors.leave(); this.justSlept = false; this.contextKey = ''; this.updateNearby(); this.save(); } else this.sleep(); },
+      secondaryLabel: '軽食を食べる（無料）', onSecondary: () => this.eatAtHome() });
     else if (key === 'resume') this.ui.contextHint({ title: 'あなたの散歩の、続きから', body: this.resumeSummary(),
       actionLabel: '続きや過ごし方を選ぶ', onAction: () => { this.resumeAvailable = false; this.resumeBook(); },
       secondaryLabel: 'そのまま歩く', onSecondary: () => { this.resumeAvailable = false; this.contextKey = ''; this.updateContext(); } });
@@ -349,10 +358,12 @@ export class Gameplay {
     const entries = this.depthRecords().filter(entry => entry.day === this.progress.life.day);
     if (entries.length) { this.ui.addText('今日、あなたがこの街に残した時間。'); this.ui.timeline(entries); }
     this.ui.addText(`これまでの思い出は${this.progress.journey.memories.length}つ。「暮らし」の手帳でいつでも読み返せます。`);
-    this.ui.addText(`${this.progress.life.minute < 480 ? this.progress.life.day : Math.min(9999, this.progress.life.day + 1)}日目の朝8時まで休みます。おつかいと持ち物はそのまま続きます。`);
+    this.ui.addText(`${this.progress.life.minute < 480 ? this.progress.life.day : Math.min(9999, this.progress.life.day + 1)}日目の朝8時まで休み、無料の朝ごはんで空腹度が0になります。おつかいと持ち物はそのまま続きます。`);
     this.ui.addAction('眠って翌朝を迎える', () => {
+      if (this.interiors.current?.id !== 'home') return;
       restUntilMorning(this.progress.life); this.justSlept = true;
-      this.recordMemories({ sleptAtHome: true }); this.changed('おはようございます。新しい一日が始まりました。');
+      homeMeal(this.progress);
+      this.recordMemories({ sleptAtHome: true }); this.changed('おはようございます。朝ごはんでお腹を満たして、新しい一日へ。');
       this.ui.dialog.close(); this.contextKey = ''; this.updateNearby();
     });
   }
@@ -495,6 +506,8 @@ export class Gameplay {
     });
     for (const id of Object.keys(this.progress.life.relations).sort((a, b) => this.progress.life.relations[b]!.points - this.progress.life.relations[a]!.points).slice(0, 12)) this.ui.addText(`${this.contacts().find(c => c.id === id)?.name ?? id} · ${friendship(this.progress.life, id)}`);
     this.ui.addText('操作：WASD / 矢印で移動、Shiftで走る、マウスや右側のスワイプでカメラ。Eで話す・拾う・座る・出入り。I：持ち物、J：依頼帳、M：地図。タッチ端末は左下のスティックで移動します。');
+    this.ui.addText('走り続けると徐々に加速し、10秒で通常の走行の2倍、20秒で3倍になります。歩く・止まる・会話やメニューを開くと加速はリセット。スマホは「走る」をオンにしてスティックを動かします。');
+    this.ui.addText('空腹度は0で満腹、100で空腹。時間がたつと増え、走ると早くお腹が空きます。上部の空腹度か持ち物から飲食でき、自宅では無料の軽食と朝ごはんを用意しています。空腹でも散歩や走行は続けられます。');
   }
 
   private bookSections(current: string): void {
@@ -778,6 +791,17 @@ export class Gameplay {
       if (result.ok) { this.recordMemories({ consumed: id }); this.changed(result.message); }
       return result;
     });
+    if (this.interiors.current?.id === 'home') this.ui.addAction('自宅で軽食を食べる（無料）', () => {
+      this.eatAtHome(); this.inventory();
+    });
+    else if (this.home) this.ui.addAction('自宅の軽食へ案内', () => this.guideAndClose('home'));
+  }
+
+  private eatAtHome(): void {
+    if (this.interiors.current?.id !== 'home') return;
+    const result = homeMeal(this.progress);
+    this.changed(result.message);
+    this.updateNearby();
   }
 
   journal(): void {
@@ -830,7 +854,7 @@ export class Gameplay {
   };
   private readonly saveOnLeave = (): void => { this.save(); };
   private readonly visibility = (): void => {
-    if (document.hidden) { this.save(); this.audio.pause(); }
+    if (document.hidden) { this.skipWorldTick = true; this.save(); this.audio.pause(); }
     else if (this.progress.life.sound) void this.audio.configure(true, this.progress.life.volume);
   };
   private readonly storageChanged = (event: StorageEvent): void => {

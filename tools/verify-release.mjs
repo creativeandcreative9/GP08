@@ -56,6 +56,8 @@ try {
   await page.goto(base, { timeout: 300000 }); await ready();
   await expect(page.locator('#hud')).toBeHidden();
   await expect(page.locator('.life-bar')).toContainText('所持金 1,200円');
+  await expect(page.locator('.life-hunger')).toBeVisible();
+  await expect(page.locator('.life-hunger')).toContainText('空腹');
   await page.getByRole('button', { name: '暮らし', exact: true }).click();
   await page.getByRole('button', { name: '散歩', exact: true }).click();
   await expect(page.locator('.life-theme-card')).toHaveCount(3);
@@ -72,7 +74,10 @@ try {
   const journalCheck = await page.evaluate(() => JSON.parse(localStorage.getItem('gp08.life.v1')).exploration);
   expect(journalCheck.active).toBe('horizon');
   expect(journalCheck.observations).toEqual([]);
-  await page.getByRole('button', { name: '持ち物 [I]', exact: true }).click(); await expect(page.getByRole('dialog')).toContainText('まだ何も持っていません'); await page.keyboard.press('Escape');
+  await page.locator('.life-hunger').click();
+  await expect(page.getByRole('dialog')).toContainText('まだ何も持っていません');
+  await expect(page.getByRole('button', { name: '自宅の軽食へ案内', exact: true })).toBeVisible();
+  await page.keyboard.press('Escape');
   await page.getByRole('button', { name: '設定', exact: true }).click();
   await page.getByRole('button', { name: '音をオンにする（BGM・環境音・足音）', exact: true }).click();
   await page.waitForFunction(() => window.__releaseAudio.some(context => context.state === 'running'), null, { timeout: 30000 });
@@ -90,7 +95,9 @@ try {
   const f = await page.evaluate(() => window.__gp08.frames); await page.waitForFunction(f => window.__gp08.frames >= f + 15, f, { timeout: 180000 });
   await expect(page.locator('.life-clock')).toContainText('雨');
   await page.screenshot({ path: path.join(output, 'release-rain.png'), timeout: 180000 });
-  const result = { verifiedAt: new Date().toISOString(), entrypoints, files: files.length, privateRequests, errors, reports, audioOn, audioOff, journalCheck, dayLuma: luminance(path.join(output, 'release-day.png')), nightLuma: luminance(path.join(output, 'release-night.png')), builtState: await page.evaluate(() => ({ ready: window.__gp08.ready, debugScene: !!window.__gp08.scene, errors: window.__gp08.errors, saveVersion: JSON.parse(localStorage.getItem('gp08.life.v1')).version })) };
+  const result = { verifiedAt: new Date().toISOString(), entrypoints, files: files.length, privateRequests, errors, reports, audioOn, audioOff, journalCheck, dayLuma: luminance(path.join(output, 'release-day.png')), nightLuma: luminance(path.join(output, 'release-night.png')), builtState: await page.evaluate(() => ({ ready: window.__gp08.ready, debugScene: !!window.__gp08.scene, errors: window.__gp08.errors, saveVersion: JSON.parse(localStorage.getItem('gp08.life.v1')).version, hunger: JSON.parse(localStorage.getItem('gp08.life.v1')).hunger })) };
+  expect(result.builtState.hunger).toBeGreaterThanOrEqual(0);
+  expect(result.builtState.hunger).toBeLessThanOrEqual(100);
   // Close the desktop renderer before the touch viewport: only one software GPU workload at a time.
   await page.close();
   const mobile = await browser.newPage({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }); watch(mobile);

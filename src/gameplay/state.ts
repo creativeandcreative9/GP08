@@ -5,15 +5,16 @@ import { newJourney, readJourney, type JourneyState } from './journey';
 import { newPreferences, readPreferences, type PlayPreferences } from './preferences';
 import { newStories, readStories, type StoryState } from './stories';
 import { newExploration, readExploration, type ExplorationState } from './exploration';
+import { readHunger, relieveHunger } from './hunger';
 
 // Keep the original key so version-1 saves migrate in place without losing progress.
 export const SAVE_KEY = 'gp08.life.v1';
 export const MAX_MONEY = 1_000_000;
 export const ITEMS = {
-  dango: { name: '三色だんご', price: 180, shop: 'e-wagashi', verb: '食べる', message: 'もちもちのだんご。桜を眺めるおやつにぴったり。' },
-  tea: { name: '緑茶', price: 150, shop: 'e-wagashi', verb: '飲む', message: '温かいお茶で、ほっとひと息。' },
-  onigiri: { name: 'おにぎり', price: 160, shop: 'w-conbini', verb: '食べる', message: '海苔の香りのおにぎり。次は海まで歩いてみよう。' },
-  coffee: { name: '持ち帰りコーヒー', price: 320, shop: 'w-cafe', verb: '飲む', message: '香ばしいコーヒー。のんびり過ごす午後の味。' },
+  dango: { name: '三色だんご', price: 180, shop: 'e-wagashi', verb: '食べる', hungerRelief: 25, message: 'もちもちのだんご。桜を眺めるおやつにぴったり。' },
+  tea: { name: '緑茶', price: 150, shop: 'e-wagashi', verb: '飲む', hungerRelief: 3, message: '温かいお茶で、ほっとひと息。' },
+  onigiri: { name: 'おにぎり', price: 160, shop: 'w-conbini', verb: '食べる', hungerRelief: 45, message: '海苔の香りのおにぎり。次は海まで歩いてみよう。' },
+  coffee: { name: '持ち帰りコーヒー', price: 320, shop: 'w-cafe', verb: '飲む', hungerRelief: 5, message: '香ばしいコーヒー。のんびり過ごす午後の味。' },
 } as const;
 export type ItemId = keyof typeof ITEMS;
 export const ITEM_IDS = Object.keys(ITEMS) as ItemId[];
@@ -22,6 +23,8 @@ export interface Progress {
   version: 3;
   life: LifeState;
   money: number;
+  /** 0 is full, 100 is hungry. Fractions retain elapsed active time across saves. */
+  hunger: number;
   inventory: Record<ItemId, number>;
   greeted: string[];
   boughtDango: boolean;
@@ -38,7 +41,7 @@ export interface Progress {
 }
 
 export const newProgress = (): Progress => ({
-  version: 3, life: newLife(), money: 1200, inventory: { dango: 0, tea: 0, onigiri: 0, coffee: 0 },
+  version: 3, life: newLife(), money: 1200, hunger: 0, inventory: { dango: 0, tea: 0, onigiri: 0, coffee: 0 },
   greeted: [], boughtDango: false, ateDango: false, rewarded: false, position: null,
   errand: null, completedErrands: [], journey: newJourney(), preferences: newPreferences(),
   stories: newStories(), exploration: newExploration(),
@@ -73,12 +76,13 @@ export function parseProgress(raw: string | null): Progress | null {
       }
     }
     const life = v.version === 3 ? readLife(v.life) : newLife();
+    const hunger = readHunger(v.hunger);
     const journey = readJourney(v.journey), preferences = readPreferences(v.preferences);
-    if (!life || !journey || !preferences || journey.memories.some(m => m.day > life.day)) return null;
+    if (!life || hunger === null || !journey || !preferences || journey.memories.some(m => m.day > life.day)) return null;
     const stories = readStories(v.stories, life.day, life.minute), exploration = readExploration(v.exploration, life.day, life.minute);
     if (!stories || !exploration || stories.arcs.some(arc => !(v.greeted as string[]).includes(arc.resident))) return null;
     return {
-      version: 3, life, money: v.money, inventory: Object.fromEntries(ITEM_IDS.map(id => [id, inventory[id]])) as Progress['inventory'],
+      version: 3, life, money: v.money, hunger, inventory: Object.fromEntries(ITEM_IDS.map(id => [id, inventory[id]])) as Progress['inventory'],
       greeted: [...new Set(v.greeted as string[])], boughtDango: v.boughtDango as boolean, ateDango: v.ateDango as boolean,
       rewarded: v.rewarded as boolean, position: v.position as Progress['position'],
       errand, completedErrands, journey, preferences, stories, exploration,
@@ -116,8 +120,15 @@ export function buy(p: Progress, id: ItemId, shop: string): ActionResult {
 export function consume(p: Progress, id: ItemId): ActionResult {
   if (p.inventory[id] <= 0) return { ok: false, message: '持ち物にありません。' };
   p.inventory[id]--;
+  relieveHunger(p, ITEMS[id].hungerRelief);
   if (id === 'dango') p.ateDango = true;
   return { ok: true, message: ITEMS[id].message + reward(p) };
+}
+
+/** Gameplay guards the actual home location. A meal is free at any hour. */
+export function homeMeal(p: Progress): ActionResult {
+  p.hunger = 0;
+  return { ok: true, message: '自宅の食事で、おなかがいっぱいになりました。' };
 }
 
 export function acceptErrand(p: Progress, resident: string): ActionResult {
