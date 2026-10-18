@@ -1,0 +1,51 @@
+.life-vista-toolbar {
+  position: fixed;
+  z-index: 30;
+  left: 50%;
+  bottom: max(24px, env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  max-width: min(600px, calc(100vw - 28px));
+  box-sizing: border-box;
+  padding: 15px 16px 15px 22px;
+  border: 1px solid #fffdf5c4;
+  border-radius: 20px;
+  color: #28473f;
+  background: #fffdf5f2;
+  box-shadow: 0 8px 36px #153a3a24;
+  font-family: inherit;
+}
+.life-vista-toolbar[hidden] { display: none; }
+.life-vista-copy { display: grid; gap: 4px; min-width: 0; }
+.life-vista-copy strong { font-size: 17px; font-family: Georgia, 'Yu Mincho', 'Hiragino Mincho ProN', serif; font-weight: 600; }
+.life-vista-copy span { font-size: 12px; line-height: 1.6; color: #587468; }
+.life-vista-return {
+  flex-shrink: 0;
+  min-height: 46px;
+  padding: 11px 18px;
+  border: 1px solid #356d5b;
+  border-radius: 12px;
+  color: #fffdf5;
+  background: #356d5b;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.life-vista-return:hover { background: #285449; }
+.life-vista-return:focus-visible { outline: 3px solid #83bdb0; outline-offset: 3px; }
+body.discovery-viewing .life-ui,
+body.discovery-viewing .touch-controls,
+body.discovery-viewing .life-wayfinder,
+body.discovery-viewing #help { visibility: hidden; }
+@media (max-width: 600px) {
+  .life-vista-toolbar { width: calc(100vw - 28px); gap: 12px; padding: 13px 14px; bottom: max(14px, env(safe-area-inset-bottom)); }
+  .life-vista-copy strong { font-size: 15px; }
+  .life-vista-copy span { font-size: 12px; }
+  .life-vista-return { padding: 10px 14px; }
+}
+@media (max-height: 450px) {
+  .life-vista-toolbar { bottom: max(10px, env(safe-area-inset-bottom)); padding: 10px 14px; }
+}

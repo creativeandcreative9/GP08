@@ -1,0 +1,154 @@
+/* Keep the native dialog's title and exit visible while its pages scroll. */
+.life-ui .life-dialog[open] { display: flex; flex-direction: column; overflow: hidden; }
+.life-ui .life-dialog > .life-dialog-kicker,
+.life-ui .life-dialog > h2,
+.life-ui .life-dialog > .life-close { flex-shrink: 0; }
+.life-ui .life-dialog-content {
+  flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  margin: -6px; padding: 6px; scroll-padding-block: 8px;
+}
+.life-ui .life-dialog > .life-close { align-self: flex-start; min-height: 44px; margin-top: 18px; }
+
+/* The walking HUD is styled separately in style.css. */
+.life-ui .life-section-nav {
+  position: sticky; top: 0; z-index: 1; display: flex; flex-wrap: wrap; gap: 4px;
+  margin: 0 0 22px; padding: 5px; border: 1px solid #d9dfd1; border-radius: 14px;
+  background: #f6f6ee; box-shadow: 0 4px 12px #314e4110;
+}
+.life-ui .life-section-nav button {
+  flex: 1 1 auto; min-height: 44px; padding: 9px 12px; border-color: transparent;
+  border-radius: 10px; background: transparent; color: #5d7365; font-size: 13px;
+}
+.life-ui .life-section-nav button[aria-current=page] {
+  color: #fffdf7; border-color: #356c5d; background: #356c5d; box-shadow: 0 2px 5px #28473f1a;
+}
+.life-ui .life-section-nav button:hover:not([aria-current]):not(:disabled) { background: #e8eee0; }
+
+.life-ui .life-journal-card {
+  box-sizing: border-box; margin: 20px 0; border: 1px solid #dedccf; border-radius: 17px;
+  background: #fffdf7; box-shadow: 0 5px 20px #3d51400b; overflow-wrap: anywhere;
+}
+.life-ui .life-journal-card h3 {
+  margin: 10px 0 13px; font: 600 22px/1.6 'Yu Mincho', 'Hiragino Mincho ProN', serif;
+  letter-spacing: .035em; color: #354e45;
+}
+.life-ui .life-journal-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 18px; }
+.life-ui .life-journal-actions button {
+  flex: 1 1 120px; min-height: 44px; padding: 11px 13px; margin: 0;
+  text-align: center; font-size: 12px; line-height: 1.6; border-color: #cfd9c8;
+}
+.life-ui .life-journal-actions .life-primary { color: #fffdf7; background: #356c5d; border-color: #356c5d; }
+.life-ui .life-journal-actions .life-primary:hover:not(:disabled) { background: #28564a; }
+.life-ui .life-journal-actions button[aria-pressed=true] { border-color: #bd8393; color: #8c5064; background: #fff0f2; }
+
+.life-ui .life-story-card { padding: 23px; background: linear-gradient(150deg, #fffdf8, #f8f4e9); }
+.life-ui .life-story-card.is-complete { border-color: #c9d7bf; background: linear-gradient(150deg, #fffdf8, #f0f5e9); }
+.life-story-person { display: flex; align-items: center; gap: 11px; margin-bottom: 19px; }
+.life-story-person small { display: block; font-size: 10px; letter-spacing: .08em; }
+.life-story-person strong { display: block; margin-top: 2px; font-size: 14px; letter-spacing: .04em; }
+.life-story-seal {
+  flex: 0 0 42px; display: grid; place-items: center; width: 42px; height: 42px;
+  border: 1px solid #c9d7bf; border-radius: 50% 50% 46% 50%; color: #597654;
+  background: #e8eddc; font: 600 22px/1 'Yu Mincho', 'Hiragino Mincho ProN', serif;
+  box-shadow: inset 0 0 0 4px #ffffff65;
+}
+.life-story-caption { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 5px 12px; border-top: 1px solid #e4decb; padding-top: 14px; }
+.life-story-caption small { color: #966b5e; font-size: 11px; font-variant-numeric: tabular-nums; }
+.life-story-caption span { color: #79816e; font-size: 10px; }
+.life-ui .life-story-prose p { margin: 12px 0; font-size: 14px; line-height: 2.05; color: #465b50; white-space: pre-line; }
+.life-story-choice { margin-top: 18px; padding: 13px 15px; border-left: 3px solid #ca8d9c; border-radius: 3px 10px 10px 3px; background: #fff1ee; }
+.life-story-choice small { font-size: 10px; color: #9a6070; letter-spacing: .05em; }
+.life-ui .life-story-choice p { margin: 5px 0 0; color: #674f4d; font-size: 13px; line-height: 1.8; }
+
+.life-ui .life-postcard { overflow: hidden; border-color: #e0d5bd; }
+.life-ui .life-postcard.is-favorite { border-color: #d1a1ad; box-shadow: 0 5px 22px #88546710; }
+.life-postcard-art { position: relative; border-bottom: 1px solid #d8d6c5; background: #d3e4e6; }
+.life-postcard-sketch {
+  display: block; width: 100%; height: auto;
+  --postcard-sky: #d9eaf0; --postcard-sun: #fff4d1; --postcard-cloud: #e9eeeb;
+  --postcard-distance: #b0c7b7; --postcard-green: #8ea98b; --postcard-petal: #e8b4c6;
+  --postcard-water: #85b7c5; --postcard-sand: #e6d8b7; --postcard-wall: #efe4ce;
+  --postcard-roof: #738b83; --postcard-window: #b0d1ce;
+}
+.life-postcard-sketch[data-weather=rain] {
+  --postcard-sky: #c4d5dc; --postcard-sun: #dce3df; --postcard-cloud: #b4c9d0;
+  --postcard-distance: #9eb6ac; --postcard-green: #89a09a; --postcard-water: #87a9b7;
+}
+.life-postcard-sketch[data-night] {
+  --postcard-sky: #34475f; --postcard-sun: #f0e4bb; --postcard-cloud: #506177;
+  --postcard-distance: #526c72; --postcard-green: #5d7b78; --postcard-petal: #b49cab;
+  --postcard-water: #537e94; --postcard-sand: #a9a993; --postcard-wall: #b8b7a4;
+  --postcard-roof: #4f6366; --postcard-window: #f4cf8b;
+}
+.life-postcard-place {
+  position: absolute; top: 12px; left: 12px; max-width: calc(100% - 48px); padding: 5px 10px;
+  color: #405e56; background: #fffdf2e8; border: 1px solid #fffdf4bd; border-radius: 6px;
+  font-size: 11px; letter-spacing: .06em; line-height: 1.5;
+}
+.life-ui .life-postcard-art-note { position: absolute; right: 9px; bottom: 5px; color: #304b40; background: #fffdf4b8; padding: 1px 5px; border-radius: 3px; font-size: 9px; }
+.life-postcard-copy { padding: 20px 23px 23px; }
+.life-postcard-meta { display: flex; align-items: center; justify-content: space-between; gap: 7px; flex-wrap: wrap; }
+.life-postcard-meta small { font-size: 11px; font-variant-numeric: tabular-nums; }
+.life-postcard-favorite { padding: 3px 8px; border: 1px solid #e2b7c1; border-radius: 12px; background: #fff0f2; color: #97576b; font-size: 10px; }
+.life-ui .life-postcard h3 { margin-top: 10px; }
+.life-ui .life-postcard-subtitle { margin: 5px 0 10px; color: #927463; font-size: 12px; }
+.life-ui .life-postcard-description { margin: 10px 0 0; font-size: 13px; line-height: 1.95; color: #536358; white-space: pre-line; }
+
+.life-theme-cards { display: grid; gap: 12px; margin: 19px 0 24px; }
+.life-ui .life-theme-card {
+  display: flex; align-items: stretch; gap: 14px; width: 100%; min-height: 108px; padding: 12px;
+  text-align: left; border: 1px solid #d5ddcd; border-radius: 15px; background: #fbfcf4;
+}
+.life-ui .life-theme-card[aria-pressed=true] { border: 2px solid #5a8770; padding: 11px; background: #eef4e7; }
+.life-theme-art { position: relative; flex: 0 0 88px; min-height: 94px; align-self: stretch; overflow: hidden; border-radius: 9px; background: #d9eaf0; }
+.life-theme-art svg { position: absolute; left: 50%; top: 0; width: 242px; height: 94px; max-width: none; transform: translateX(-50%); }
+.life-theme-copy { display: block; flex: 1; min-width: 0; font-weight: 400; }
+.life-theme-copy > small { display: block; color: #6a7e69; font-size: 10px; line-height: 1.6; }
+.life-theme-copy strong { display: block; margin: 3px 0 6px; color: #3c594d; font: 600 18px/1.5 'Yu Mincho', 'Hiragino Mincho ProN', serif; }
+.life-theme-copy > span { display: block; color: #5d6d60; font-size: 12px; line-height: 1.8; }
+.life-theme-copy > .life-theme-detail { margin-top: 7px; color: #8b7961; font-size: 11px; }
+
+.life-journal-timeline { margin: 22px 0; }
+.life-timeline-day { margin: 0 0 28px; }
+.life-timeline-day:last-child { margin-bottom: 0; }
+.life-ui .life-timeline-day-title {
+  display: flex; align-items: center; gap: 13px; margin: 0 0 16px;
+  color: #526c58; font: 600 18px/1.6 'Yu Mincho', 'Hiragino Mincho ProN', serif; letter-spacing: .06em;
+}
+.life-timeline-day-title::after { content: ''; flex: 1; border-top: 1px solid #dce3d5; }
+.life-timeline-events { list-style: none; margin: 0; padding: 0; }
+.life-timeline-events > li { position: relative; margin: 0 0 0 5px; padding: 0 0 24px 24px; border-left: 1px solid #cfdbca; }
+.life-timeline-events > li:last-child { padding-bottom: 0; border-left-color: transparent; }
+.life-timeline-events > li::before { content: ''; position: absolute; top: 5px; left: -5px; width: 7px; height: 7px; border: 1px solid #8ca58c; border-radius: 50%; background: #f1f5e8; }
+.life-timeline-when { display: flex; align-items: center; flex-wrap: wrap; gap: 7px 10px; }
+.life-timeline-when small { font-size: 11px; font-variant-numeric: tabular-nums; }
+.life-timeline-when span { color: #9b6b74; font-size: 10px; }
+.life-ui .life-timeline-events h4 { margin: 7px 0; font-size: 15px; line-height: 1.7; font-weight: 600; }
+.life-ui .life-journal-timeline p { margin: 5px 0 0; color: #617062; font-size: 12px; line-height: 1.9; }
+.life-ui .life-journal-timeline > .life-timeline-empty { padding: 14px 16px; border: 1px dashed #cbd8c4; border-radius: 12px; color: #6a7b6b; font-size: 13px; line-height: 1.9; }
+
+@media (max-width: 480px) {
+  .life-ui .life-section-nav { gap: 3px; padding: 4px; margin-bottom: 17px; }
+  .life-ui .life-section-nav button { padding: 8px 9px; font-size: 12px; }
+  .life-ui .life-story-card { padding: 18px; }
+  .life-ui .life-journal-card h3 { font-size: 20px; }
+  .life-ui .life-story-prose p { font-size: 13px; line-height: 2; }
+  .life-postcard-copy { padding: 16px 18px 18px; }
+  .life-ui .life-journal-actions button { flex-basis: 105px; padding: 10px; font-size: 12px; }
+  .life-ui .life-theme-card { gap: 11px; }
+  .life-theme-art { flex-basis: 72px; }
+  .life-theme-copy strong { font-size: 17px; }
+}
+@media (max-height: 500px) and (orientation: landscape) {
+  .life-ui .life-dialog { padding: 14px 18px; max-height: calc(100dvh - 24px); }
+  .life-ui .life-dialog > .life-dialog-kicker { display: none; }
+  .life-ui .life-dialog > h2 { margin-bottom: 12px; font-size: 20px; line-height: 1.4; }
+  .life-ui .life-dialog > .life-close { margin-top: 12px; }
+  .life-ui .life-section-nav { position: static; margin-bottom: 16px; }
+  .life-ui .life-story-card { padding: 19px; }
+  .life-postcard-art svg { max-height: 140px; }
+}
+@media (prefers-contrast: more) {
+  .life-ui .life-journal-card, .life-ui .life-theme-card, .life-ui .life-section-nav { border-color: #52715f; }
+  .life-ui .life-journal-card small, .life-ui .life-theme-card small, .life-ui .life-journal-card p { color: #3b5144; }
+}

@@ -2,6 +2,7 @@ import type { Town } from '../town/build';
 import { mapToWorld, PX, type WorldXZ } from '../town/layout';
 import { BEACH_WIDTH, coastZ } from '../town/heights';
 import { blocked, inReach, type Contact } from './world';
+import { validResident } from './errands';
 
 export interface MapPlace extends WorldXZ {
   id: string;
@@ -36,10 +37,12 @@ export function mapPlaces(town: Town, shops: readonly Contact[]): MapPlace[] {
 
 export function navigationText(player: WorldXZ & { y: number }, target: MapPlace, town: Pick<Town, 'obstacles'>): string {
   const distance = Math.hypot(target.x - player.x, target.z - player.z);
-  const arrived = target.kind === 'shop' || target.id === 'home'
-    ? inReach(player, { ...target, kind: target.id === 'home' ? 'home' : 'shop', line: '' }, town.obstacles)
+  const resident = validResident(target.id);
+  const arrived = target.kind === 'shop' || target.id === 'home' || resident
+    ? inReach(player, { ...target, kind: resident ? 'resident' : target.id === 'home' ? 'home' : 'shop', line: '' }, town.obstacles)
     : distance < 55 && Math.abs(target.y - player.y) < 16;
   if (arrived && target.id === 'home') return '自宅に到着。入口で E または画面のボタンから入り、朝まで休めます。';
+  if (arrived && resident) return `${target.name}が近くにいます。E または画面のボタンで話しかけよう。`;
   if (arrived) return target.kind === 'shop'
     ? `${target.name}の店先に到着。E キーで買い物できます。`
     : `${target.name}に到着。ひと休みして景色を楽しもう。`;

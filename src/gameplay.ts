@@ -14,15 +14,18 @@ import { touchControls } from './player/touch';
 import type { GameScene } from './scene';
 import type { Player } from './player/player';
 import { acceptErrand, buy, cancelErrand, consume, deliverErrand, greet, newProgress, parseProgress, SAVE_KEY, type ItemId, type Progress } from './gameplay/state';
-import { errandFor } from './gameplay/errands';
+import { errandFor, residentName, validResident } from './gameplay/errands';
 import { inReach, restorePosition, shopContacts, type Contact } from './gameplay/world';
-import { GameUI } from './gameplay/ui';
+import { GameUI, type JournalAction, type JournalRecord, type PostcardScene } from './gameplay/ui';
 import { mapPlaces, navigationText, type MapPlace } from './gameplay/map';
 import { canRest, restPlaces, type RestPlace } from './gameplay/rest';
 import { Wayfinder } from './gameplay/wayfinder';
 import './gameplay/wayfinder.css';
 import { isEvening, nightEpisode } from './gameplay/preferences';
 import { journeyCards, journeyCompletion, nextJourneySuggestion, observeJourney, residentReply, type JourneyContext } from './gameplay/journey';
+import { acceptStory, completeStory, observeStory, storyCards, storyOffer, storyReunion, type StoryContext, type StoryId } from './gameplay/stories';
+import { chooseExploration, explorationSuggestion, explorationThemes, observationCards, presentObservation, recordObservation, setFavorite, type ExplorationPlace } from './gameplay/exploration';
+import { DiscoveryVistas } from './gameplay/discovery-vistas';
 
 /** Coordinates proximity, the local economy, dialog controls and browser-local persistence. */
 export class Gameplay {
@@ -41,6 +44,7 @@ export class Gameplay {
   private route: WorldXZ[] = [];
   private destination: MapPlace | undefined;
   private readonly wayfinder: Wayfinder;
+  private readonly vistas: DiscoveryVistas;
   private readonly walkableSegment: (from: WorldXZ, to: WorldXZ) => boolean;
   private routeOrigin: WorldXZ | undefined;
   private lastRoutePlan = -Infinity;
@@ -49,6 +53,7 @@ export class Gameplay {
   private storageBlocked = false;
   private lastCheck = 0;
   private lastSave = performance.now();
+  private resumeAvailable = false;
 
   constructor(private readonly game: GameScene, private readonly player: Player, canvas: HTMLCanvasElement) {
     let loaded: Progress | null = null;
@@ -60,6 +65,7 @@ export class Gameplay {
       else if (loaded) message = 'おかえりなさい。前回の街歩きから再開しました。';
     } catch { this.storageBlocked = true; }
     this.progress = loaded ?? newProgress();
+    this.resumeAvailable = !!loaded && (loaded.stories.arcs.length > 0 || loaded.exploration.observations.length > 0 || loaded.exploration.active !== null);
     this.walkableSegment = createWalkingSegmentCheck(game.town.obstacles, game.town.heightAt, (x, z) => coastS(x, z) < -8);
     const position = restorePosition(game.town, this.progress.position);
     this.player.position.set(position.x, game.town.heightAt(position.x, position.z), position.z);
@@ -91,17 +97,26 @@ export class Gameplay {
       life: () => this.lifeBook(), settings: () => this.settings(),
       save: () => { this.save(); },
       modal: open => {
+        if (open) this.vistas?.restore();
         this.performanceCheck?.pause();
         if (open && this.wayfinder) this.wayfinder.root.hidden = true;
-        player.setControlsEnabled(!open);
+        player.setControlsEnabled(!open && !this.vistas?.activeId);
         if (open) game.camera.detachControl();
         else {
-          game.camera.attachControl(canvas, true); game.life?.talkTo(null);
+          if (!this.vistas?.activeId) game.camera.attachControl(canvas, true);
+          game.life?.talkTo(null);
           this.contextKey = ''; this.updateContext(); this.updateWayfinder();
         }
       },
     });
     this.wayfinder = new Wayfinder(this.ui.root);
+    this.vistas = new DiscoveryVistas(game.scene, game.town, this.places, { subject: player.root,
+      onActiveChange: active => {
+        player.setControlsEnabled(!active && !this.ui.dialog.open);
+        if (active) game.camera.detachControl();
+        else if (!this.ui.dialog.open) game.camera.attachControl(canvas, true);
+        this.updateWayfinder();
+      } });
     this.performanceCheck = new PerformanceCheck(() => {
       const engine = game.scene.getEngine(), gfx = new URLSearchParams(location.search).get('gfx');
       return { quality: game.rendering.quality, mode: gfx === 'high' || gfx === 'low' ? gfx : 'auto',
@@ -110,6 +125,7 @@ export class Gameplay {
     const performanceObserver = game.scene.onAfterRenderObservable.add(() =>
       this.performanceCheck.frame(performance.now(), !document.hidden && !this.ui.dialog.open));
     this.ui.update(this.progress);
+    if (this.resumeAvailable) message = this.resumeSummary();
     this.ui.message(this.storageBlocked ? 'ブラウザの保存機能を利用できません。このタブを閉じると進行が失われます。' : message, this.storageBlocked ? 0 : 8000);
     this.ui.saved(this.storageBlocked ? '保存できません' : loaded ? '保存データを再開' : '自動保存待ち');
     this.updateNearby();
@@ -119,7 +135,7 @@ export class Gameplay {
     window.addEventListener('storage', this.storageChanged);
     const observer = game.scene.onBeforeRenderObservable.add(() => {
       const now = performance.now();
-      if (!document.hidden && !this.ui.dialog.open) advanceClock(this.progress.life, Math.min(2, game.scene.getEngine().getDeltaTime() / 1000));
+      if (!document.hidden && !this.ui.dialog.open && !this.vistas.activeId) advanceClock(this.progress.life, Math.min(2, game.scene.getEngine().getDeltaTime() / 1000));
       this.environment.update(this.progress.life, this.interiors.indoor);
       this.collectibles.update(this.progress.life, this.interiors.indoor);
       game.life?.setTime(this.progress.life.minute);
@@ -156,6 +172,8 @@ export class Gameplay {
   }
 
   private updateNearby(): void {
+    this.syncResidentDestination();
+    this.vistas.update(this.progress.stories.arcs.filter(arc => arc.stage === 'completed').map(arc => arc.id));
     this.ui.time(clockText(this.progress.life));
     this.ui.root.toggleAttribute('data-night', isEvening(this.progress.life.minute));
     this.recordMemories();
@@ -175,6 +193,7 @@ export class Gameplay {
     const bench = this.closestBench(contact);
     this.ui.resting(this.player.resting?.name);
     if (!this.player.resting) this.ui.nearby(bench ? undefined : contact, bench?.name);
+    if (!this.player.resting && !contact && !bench && this.currentPlace()) this.ui.promptText('この場所の景色を見つける [E]');
     if (!this.player.resting && pickup) this.ui.promptText(`${pickup.name}を拾う [E]`);
     else if (!this.player.resting && !bench && contact?.id === 'home') this.ui.promptText('自宅に入る [E]');
     else if (!this.player.resting && !bench && contact?.id === 'festival') this.ui.promptText('桜まつりの受付 [E]');
@@ -182,10 +201,12 @@ export class Gameplay {
     while (this.route.length > 1
       && Math.hypot(this.player.position.x - this.route[0]!.x, this.player.position.z - this.route[0]!.z) < 9
       && this.walkableSegment(this.player.position, this.route[1]!)) this.routeOrigin = this.route.shift();
-    if (!target) { this.ui.navigate('行き先は地図から選べます。予定のない散歩も、自由に。'); this.updateWayfinder(); return; }
+    if (!target) { this.ui.navigate(validResident(this.progress.preferences.destination)
+      ? `${residentName(this.progress.preferences.destination)}は今、休憩中。朝にまた会えます。物語は手帳に残っています。`
+      : '行き先は地図から選べます。予定のない散歩も、自由に。'); this.updateWayfinder(); return; }
     const next = this.route[0];
     const base = navigationText(this.player.position, target, this.game.town);
-    if (next && !base.includes('到着')) {
+    if (next && !this.arrived(target)) {
       const dx = next.x - this.player.position.x, dz = next.z - this.player.position.z;
       const direction = ['北', '北東', '東', '南東', '南', '南西', '西', '北西'][((Math.round(Math.atan2(dx, dz) / (Math.PI / 4)) % 8) + 8) % 8];
       this.ui.navigate(`${base} · 経路：次の角は${direction}へ約${Math.round(Math.hypot(dx, dz) * .08)}m`);
@@ -195,18 +216,37 @@ export class Gameplay {
 
   private arrived(target: MapPlace): boolean {
     const p = this.player.position;
-    return target.kind === 'shop' || target.id === 'home'
-      ? inReach(p, { ...target, kind: target.id === 'home' ? 'home' : 'shop', line: '' }, this.game.town.obstacles)
+    return target.kind === 'shop' || target.id === 'home' || validResident(target.id)
+      ? inReach(p, { ...target, kind: validResident(target.id) ? 'resident' : target.id === 'home' ? 'home' : 'shop', line: '' }, this.game.town.obstacles)
       : Math.hypot(p.x - target.x, p.z - target.z) < 55 && Math.abs(p.y - target.y) < 16;
   }
 
   /** Plan from the real standing position; every guide entry point uses the same safe route. */
   private chooseDestination(id: string): void {
+    if (validResident(id)) {
+      this.progress.preferences.destination = id;
+      this.destination = undefined; this.route = []; this.lastRoutePlan = -Infinity;
+      this.syncResidentDestination(); this.updateNearby(); this.save(); return;
+    }
     const target = this.places.find(p => p.id === id);
     if (!target) { this.ui.message('この場所はまだ案内できません。地図から別の行き先を選んでください。'); return; }
     this.destination = target; this.progress.preferences.destination = id;
     this.route = []; this.routeOrigin = undefined; this.lastRoutePlan = -Infinity;
     this.ensureRoute(true); this.updateNearby(); this.save();
+  }
+
+  /** Follow the same person as they move; a closed shop or sleeping resident never becomes a false arrival. */
+  private syncResidentDestination(): void {
+    const id = this.progress.preferences.destination;
+    if (!validResident(id)) return;
+    const resident = this.game.life?.contacts().find(contact => contact.id === id);
+    if (!resident) { this.destination = undefined; this.route = []; return; }
+    const endpoint = this.route.at(-1);
+    const moved = !endpoint || Math.hypot(resident.x - endpoint.x, resident.z - endpoint.z) > 12;
+    this.destination = { ...resident, kind: 'landmark' };
+    if (moved && performance.now() - this.lastRoutePlan >= 2500) {
+      this.route = []; this.routeOrigin = undefined; this.lastRoutePlan = -Infinity;
+    }
   }
 
   private ensureRoute(force = false): void {
@@ -236,10 +276,10 @@ export class Gameplay {
     let distance = 0, previous: WorldXZ = p;
     for (const point of this.route) { distance += Math.hypot(point.x - previous.x, point.z - previous.z); previous = point; }
     const target = this.destination;
-    this.wayfinder.update({ enabled: this.progress.preferences.wayfinding, visible: !this.ui.dialog.open && !document.hidden && !this.player.resting,
+    this.wayfinder.update({ enabled: this.progress.preferences.wayfinding, visible: !this.ui.dialog.open && !document.hidden && !this.player.resting && !this.vistas?.activeId,
       indoors: this.interiors.indoor, target, player: p, waypoint: this.route[0], cameraForward: forward,
       distanceMetres: distance * .08, arrived: !!target && this.arrived(target),
-      arrivalHint: target?.id === 'home' ? '入口の操作ボタンで家へ' : target?.kind === 'shop' ? '近くの操作ボタンで買い物' : 'ひと休みして景色を楽しもう',
+      arrivalHint: target?.id === 'home' ? '入口の操作ボタンで家へ' : validResident(target?.id) ? '操作ボタンで話しかけよう' : target?.kind === 'shop' ? '近くの操作ボタンで買い物' : 'ひと休みして景色を楽しもう',
     }, this.game.scene.getEngine().getDeltaTime() / 1000);
   }
 
@@ -272,8 +312,11 @@ export class Gameplay {
     const life = this.progress.life, home = this.interiors.current?.id === 'home';
     const night = isEvening(life.minute);
     const suggestion = nextJourneySuggestion(this.progress.journey, this.journeyContext());
+    const discovery = this.discoveryHint();
     const key = this.ui.dialog.open ? 'modal' : home ? `home-${this.justSlept}` : this.interiors.indoor ? 'inside'
       : night && this.progress.preferences.nightHintDay !== nightEpisode(life.day, life.minute) ? `night-${life.day}`
+      : this.resumeAvailable ? 'resume'
+      : discovery ? `discovery-${discovery}`
       : !night && this.progress.rewarded && !this.progress.errand && this.progress.preferences.destination === null ? `suggestion-${suggestion.title}` : 'quiet';
     if (key === this.contextKey) return;
     this.contextKey = key;
@@ -285,6 +328,11 @@ export class Gameplay {
       body: this.justSlept ? 'おつかいも持ち物も、昨日の続きから。外に出て、今日の街を歩いてみよう。' : '左奥の布団で眠ると次の朝8時になります。ここから「朝まで休む」を選んでも眠れます。',
       actionLabel: this.justSlept ? '街へ出る' : '朝まで休む',
       onAction: () => { if (this.justSlept) { this.interiors.leave(); this.justSlept = false; this.contextKey = ''; this.updateNearby(); this.save(); } else this.sleep(); } });
+    else if (key === 'resume') this.ui.contextHint({ title: 'あなたの散歩の、続きから', body: this.resumeSummary(),
+      actionLabel: '続きや過ごし方を選ぶ', onAction: () => { this.resumeAvailable = false; this.resumeBook(); },
+      secondaryLabel: 'そのまま歩く', onSecondary: () => { this.resumeAvailable = false; this.contextKey = ''; this.updateContext(); } });
+    else if (key.startsWith('discovery')) this.ui.contextHint({ title: 'ここで、小さな発見', body: discovery!,
+      actionLabel: 'この場所を見つめる', onAction: () => this.discoveryBook() });
     else if (key.startsWith('suggestion')) this.ui.contextHint({ title: suggestion.title, body: suggestion.body,
       actionLabel: suggestion.destinationId ? 'この場所へ案内' : undefined,
       onAction: suggestion.destinationId ? () => { this.chooseDestination(suggestion.destinationId!); this.ui.message('寄り道も自由です。目的地はいつでも地図から変えられます。'); } : undefined });
@@ -298,6 +346,8 @@ export class Gameplay {
       .sort((a, b) => (b.minute ?? 0) - (a.minute ?? 0))[0];
     this.ui.addText(today ? `今日の思い出「${today.title}」` : '今日も一日、おつかれさま。');
     this.ui.addText(today ? today.body : '何かを達成しない日も、大切な一日。歩いた景色を思い返して、ゆっくり休もう。');
+    const entries = this.depthRecords().filter(entry => entry.day === this.progress.life.day);
+    if (entries.length) { this.ui.addText('今日、あなたがこの街に残した時間。'); this.ui.timeline(entries); }
     this.ui.addText(`これまでの思い出は${this.progress.journey.memories.length}つ。「暮らし」の手帳でいつでも読み返せます。`);
     this.ui.addText(`${this.progress.life.minute < 480 ? this.progress.life.day : Math.min(9999, this.progress.life.day + 1)}日目の朝8時まで休みます。おつかいと持ち物はそのまま続きます。`);
     this.ui.addAction('眠って翌朝を迎える', () => {
@@ -356,14 +406,14 @@ export class Gameplay {
       this.save();
       return;
     }
-    if (!contact) { this.ui.message('もう少し近づいて話しかけてみよう。'); return; }
+    if (!contact) { if (this.currentPlace()) this.discoveryBook(); else this.ui.message('もう少し近づいて話しかけてみよう。'); return; }
     if (contact.id === 'home') { this.justSlept = false; this.interiors.enter(contact); this.updateNearby(); return; }
     if (contact.id === 'festival') { this.lifeBook(true); return; }
     if (contact.kind === 'shop') {
       this.openShop(contact);
     } else {
       const again = this.progress.greeted.includes(contact.id);
-      const reply = residentReply(contact.id, this.progress);
+      const reply = storyReunion(this.progress.stories, contact.id, this.storyContext(contact.id)) || residentReply(contact.id, this.progress);
       const result = greet(this.progress, contact.id);
       this.ui.conversation({ ...contact, line: reply || contact.line }, again, result.message, this.progress, () => {
         const current = this.game.life?.contacts().find(c => c.id === contact.id);
@@ -376,6 +426,8 @@ export class Gameplay {
         return accepted;
       });
       this.ui.addText(dailyGreeting(this.progress.life, contact.id));
+      const story = storyOffer(this.progress.stories, contact.id, this.storyContext(contact.id));
+      if (story) this.ui.addAction(story.stage === 'offer' ? `小さな物語を聞く：${story.title}` : `物語の続きを話す：${story.title}`, () => this.residentStory(contact.id));
       this.ui.addAction('街の暮らしについて聞く', () => this.ui.addText(this.progress.life.minute >= 1080
         ? 'もう夕方ですね。夜は家で休みます。自宅へは地図から案内できますよ。'
         : this.progress.life.weather === 'rain' ? '雨の日の散歩も好き。お店に入れば、雨宿りできますよ。'
@@ -409,10 +461,19 @@ export class Gameplay {
 
   lifeBook(atFestival = false): void {
     this.ui.page('暮らしの手帳');
+    if (!atFestival) this.bookSections('今日');
     this.ui.addText(clockText(this.progress.life));
     if (!atFestival) {
       this.ui.addText('急がなくて大丈夫。あなたが過ごした時間を、7つの小さな思い出に。好きな順番で見つけられます。');
       this.ui.addText('今日は、どんな時間にしよう。人に会う、景色を探す、家で休む。途中で気が変わっても大丈夫です。');
+      if (this.currentPlace()) this.ui.addAction('今いる場所の景色を手帳に残す', () => this.discoveryBook());
+      const walk = explorationSuggestion(this.progress.exploration);
+      if (walk) {
+        this.ui.addText(`選んだ散歩：${walk.title}。${walk.body}`);
+        if (walk.destinationId) this.ui.addAction('散歩の続きへ案内', () => this.guideAndClose(walk.destinationId!));
+      }
+      const ongoing = storyCards(this.progress.stories).find(card => card.stage !== 'completed');
+      if (ongoing) this.ui.addText(`物語の続き：${ongoing.residentName}「${ongoing.title}」。${ongoing.nextStep}`);
       const guide = (id: string): void => { this.chooseDestination(id); this.ui.dialog.close(); };
       this.ui.addAction(isEvening(this.progress.life.minute) ? '公園で夜の散歩を楽しむ' : '住人に会いに公園へ', () => guide('plaza'));
       const exploredSea = this.progress.journey.memories.some(memory => memory.id === 'sea');
@@ -434,6 +495,231 @@ export class Gameplay {
     });
     for (const id of Object.keys(this.progress.life.relations).sort((a, b) => this.progress.life.relations[b]!.points - this.progress.life.relations[a]!.points).slice(0, 12)) this.ui.addText(`${this.contacts().find(c => c.id === id)?.name ?? id} · ${friendship(this.progress.life, id)}`);
     this.ui.addText('操作：WASD / 矢印で移動、Shiftで走る、マウスや右側のスワイプでカメラ。Eで話す・拾う・座る・出入り。I：持ち物、J：依頼帳、M：地図。タッチ端末は左下のスティックで移動します。');
+  }
+
+  private bookSections(current: string): void {
+    this.ui.sectionNav([
+      { label: '今日', active: current === '今日', action: () => this.lifeBook() },
+      { label: '人の物語', active: current === '人の物語', action: () => this.storyBook() },
+      { label: '散歩', active: current === '散歩', action: () => this.explorationBook() },
+      { label: '絵はがき', active: current === '絵はがき', action: () => this.postcardBook() },
+      { label: '日々の記録', active: current === '日々の記録', action: () => this.recordBook() },
+    ]);
+  }
+
+  private guideAndClose(id: string): void { this.chooseDestination(id); this.ui.dialog.close(); }
+
+  /** Scene-derived location, not the selected destination or text in a saved card. */
+  private currentPlace(): ExplorationPlace | undefined {
+    const indoor = this.interiors.current?.id;
+    if (indoor) return indoor === 'home' || indoor === 'w-cafe' ? indoor : undefined;
+    const broad = this.journeyContext().place;
+    if (broad && broad !== 'home') {
+      const target = this.places.find(place => place.id === broad);
+      if (target && this.walkableSegment(this.player.position, target)) return broad;
+    }
+    for (const id of ['w-cafe', 'home', 'station'] as const) {
+      const target = this.places.find(place => place.id === id);
+      if (target && this.arrived(target) && (id !== 'station' || this.walkableSegment(this.player.position, target))) return id;
+    }
+    return undefined;
+  }
+
+  private storyContext(resident?: string): StoryContext {
+    const place = this.currentPlace(), life = this.progress.life;
+    return { day: life.day, minute: life.minute, weather: life.weather, resident,
+      place: place === 'plaza' || place === 'beach' || place === 'station' ? place : undefined,
+      resting: !!this.player.resting };
+  }
+
+  private discoveryHint(): string | undefined {
+    const place = this.currentPlace();
+    const destination = this.progress.preferences.destination;
+    if (!place || (destination !== null && destination !== place)) return undefined;
+    const story = storyCards(this.progress.stories).find(card => card.stage === 'accepted' && card.destinationId === place);
+    if (story) return story.nextStep;
+    return explorationThemes(this.progress.exploration).find(theme => theme.selected)?.steps
+      .find(step => step.place === place && !step.recorded)?.hint;
+  }
+
+  private discoveryBook(): void {
+    const place = this.currentPlace();
+    this.ui.page('この場所で、見つけたこと'); this.bookSections('散歩');
+    if (!place) { this.ui.addText('公園や海辺、お店の入口など、気になる場所に近づいてみよう。'); return; }
+    const definition = explorationThemes(this.progress.exploration).flatMap(theme => theme.steps).find(step => step.place === place)!;
+    this.ui.addText(`${definition.name} — ${definition.hint}`);
+    const vista = !this.interiors.indoor ? this.vistas.nearest(this.player.position) : undefined;
+    if (vista) this.ui.addAction('手帳を閉じて、景色を眺める', () => {
+      this.ui.dialog.addEventListener('close', () => {
+        if (!this.vistas.activate(vista.id, this.player.position)) this.ui.message('眺める場所から離れました。案内の絵の近くで、もう一度どうぞ。');
+      }, { once: true });
+      this.ui.dialog.close();
+    });
+    const existing = observationCards(this.progress.exploration).find(card => card.id === place);
+    if (existing) {
+      const now = presentObservation(place, this.progress.life);
+      if (now) this.ui.storyCard({ title: 'いま、この場所で', person: definition.name, body: now.body, step: clockText(this.progress.life) });
+      this.appendPostcard(existing);
+    }
+    else this.ui.addAction('景色を手帳に残す', () => {
+      if (this.currentPlace() !== place) { this.ui.addText('その場所から離れました。近づいてからもう一度、景色を見つめてみよう。'); return; }
+      const result = recordObservation(this.progress.exploration, { ...this.progress.life, place });
+      if (!result.ok) { this.ui.addText(result.message); return; }
+      this.progress.exploration = result.state; this.changed(result.message);
+      this.discoveryBook();
+      for (const theme of result.completedThemes) this.ui.storyCard({ title: `${theme.title}を歩き終えて`, person: 'あなたの散歩', body: theme.ending!, step: 'ひとつの道のり', completed: true });
+      if (result.completedThemes.length) this.ui.celebration('ひとつの散歩が、思い出に', result.completedThemes[0]!.ending!);
+    });
+    for (const card of storyCards(this.progress.stories).filter(card => card.stage === 'accepted' && card.destinationId === place)) {
+      this.ui.storyCard({ id: card.id, title: card.title, person: card.residentName, body: card.nextStep, step: 2, choice: card.choiceLabel }, [
+        { label: card.actionLabel ?? 'ここで確かめてみる', primary: true, action: () => this.observeResidentStory(card.id) },
+      ]);
+    }
+  }
+
+  private observeResidentStory(id: StoryId): void {
+    const result = observeStory(this.progress.stories, id, this.storyContext());
+    if (!result.ok) { this.ui.addText(result.message); return; }
+    this.progress.stories = result.state; this.changed(result.message); this.storyBook();
+  }
+
+  private residentStory(id: string, ending?: string): void {
+    const current = this.game.life?.contacts().find(contact => contact.id === id);
+    if (this.interiors.indoor || !current || !inReach(this.player.position, current, this.game.town.obstacles)) {
+      this.ui.message('本人のそばで、物語の続きを話してみよう。'); return;
+    }
+    const offer = storyOffer(this.progress.stories, id, this.storyContext(id));
+    if (!offer) return;
+    this.ui.page(offer.title);
+    const actions: JournalAction[] = offer.choices.map(choice => ({ label: choice.label, primary: true, action: () => {
+      if (!this.game.life?.contacts().some(contact => contact.id === id && inReach(this.player.position, contact, this.game.town.obstacles))) {
+        this.ui.addText('話し相手から離れています。そばでもう一度話そう。'); return;
+      }
+      const result = acceptStory(this.progress.stories, id, choice.id, this.storyContext(id));
+      if (!result.ok) { this.ui.addText(result.message); return; }
+      this.progress.stories = result.state; this.changed(result.message); this.residentStory(id);
+      this.vistas.update(this.progress.stories.arcs.filter(arc => arc.stage === 'completed').map(arc => arc.id));
+    } }));
+    if (offer.stage === 'observed') actions.push({ label: '見つけたことを伝える', primary: true, action: () => {
+      const resident = this.game.life?.contacts().find(contact => contact.id === id);
+      if (this.interiors.indoor || !resident || !inReach(this.player.position, resident, this.game.town.obstacles)) {
+        this.ui.addText('話し相手から離れています。そばでもう一度話そう。'); return;
+      }
+      const result = completeStory(this.progress.stories, id, this.storyContext(id));
+      if (!result.ok) { this.ui.addText(result.message); return; }
+      this.progress.stories = result.state; this.changed('見つけたことを伝えました。相手からの言葉を、手帳に残しました。'); this.residentStory(id, result.message);
+      this.ui.celebration('言葉が、誰かに届いた', `${residentName(id)}との物語が、暮らしの手帳に残りました。`);
+    } });
+    const card = storyCards(this.progress.stories).find(card => card.residentId === id);
+    if (card?.destinationId) actions.push({ label: '物語の場所へ案内', action: () => this.guideAndClose(card.destinationId!) });
+    this.ui.storyCard({ id: offer.id, title: offer.title, person: `${offer.residentName} · ${offer.portraitLine}`,
+      body: ending ?? offer.body, step: offer.stage === 'offer' ? 'はじめまして' : offer.stage === 'accepted' ? '散歩の約束' : offer.stage === 'observed' ? '見つけたこと' : 'その後のふたり',
+      choice: card?.choiceLabel, completed: offer.stage === 'completed' }, actions);
+    if (offer.choices.length) for (const choice of offer.choices) this.ui.addText(`${choice.label}：${choice.description}`);
+    this.ui.addAction(offer.stage === 'offer' ? '今は聞くだけにする' : 'また、あとで話そう', () => this.ui.dialog.close());
+    this.ui.addAction('物語を手帳で読む', () => this.storyBook());
+  }
+
+  private storyBook(): void {
+    this.ui.page('人の物語'); this.bookSections('人の物語');
+    this.ui.addText('桜の木陰、海への憧れ、駅の音。この街で出会う人には、それぞれ気になっていることがあります。話しかけて、小さな物語を聞いてみよう。期限も、正解の選択もありません。');
+    const cards = storyCards(this.progress.stories);
+    if (!cards.length) this.ui.addAction('住人に会いに、公園へ', () => this.guideAndClose('plaza'));
+    for (const card of cards) {
+      const actions: JournalAction[] = [];
+      if (card.stage !== 'completed') {
+        actions.push({ label: card.stage === 'observed' ? `${card.residentName}に会いに行く` : '物語の場所へ案内', action: () => this.guideAndClose(card.destinationId ?? card.residentId), primary: true });
+        if (card.stage === 'accepted' && this.currentPlace() === card.destinationId) actions.push({ label: card.actionLabel ?? 'ここで確かめる', action: () => this.observeResidentStory(card.id) });
+      } else actions.push({ label: `${card.residentName}をまた訪ねる`, action: () => this.guideAndClose(card.residentId) });
+      const arc = this.progress.stories.arcs.find(arc => arc.id === card.id)!;
+      this.ui.storyCard({ id: card.id, title: card.title, person: card.residentName,
+        body: [card.observation ?? card.body, ...(card.ending ? [card.ending] : []), card.nextStep, `${arc.acceptedDay}日目に出会った物語${arc.completedDay ? ` · ${arc.completedDay}日目に伝えた言葉` : ''}`],
+        step: card.stage === 'completed' ? 3 : card.stage === 'observed' ? 2 : 1, totalSteps: 3, choice: card.choiceLabel, completed: card.stage === 'completed' }, actions);
+    }
+    if (cards.length === 3 && cards.every(card => card.stage === 'completed')) {
+      this.ui.addText(`桜の街の、三つの声。${cards.map(card => `${card.residentName}と「${card.choiceLabel}」`).join('、')}。同じ街を歩いても、あなたが選んだ言葉が、ここに残りました。また会っても、もう最初の挨拶だけではありません。`);
+      this.ui.addAction('今度は、自分の好きな散歩へ', () => this.explorationBook());
+    }
+  }
+
+  private explorationBook(): void {
+    this.ui.page('気分で選ぶ、街の散歩'); this.bookSections('散歩');
+    this.ui.addText('好きな順で、景色を三つ。場所に着いたら「この場所を見つめる」から手帳に残そう。途中で変えても、発見した景色はなくなりません。');
+    const themes = explorationThemes(this.progress.exploration);
+    this.ui.themeCards(themes.map(theme => ({ id: theme.id, title: theme.title, body: theme.body,
+      detail: `${theme.progress} / ${theme.total}の景色${theme.complete ? ' · 歩き終えました' : ''}`, selected: theme.selected,
+      scene: theme.id === 'horizon' ? 'sea' : theme.id === 'lights' ? 'home' : 'park',
+      action: () => { this.progress.exploration = chooseExploration(this.progress.exploration, theme.id); this.changed(`「${theme.title}」を選びました。`); this.explorationBook(); } })));
+    const selected = themes.find(theme => theme.selected);
+    if (selected) {
+      this.ui.addText(selected.ending ?? '次に行く場所も、自分で選べます。');
+      for (const step of selected.steps) {
+        this.ui.addText(`${step.recorded ? '見つけた景色' : 'これからの発見'}：${step.name}。${step.hint}`);
+        this.ui.addAction(`${step.name}へ${step.recorded ? 'また訪ねる' : '案内'}`, () => this.guideAndClose(step.destinationId));
+      }
+    }
+    if (this.currentPlace()) this.ui.addAction('今いる場所を見つめる', () => this.discoveryBook());
+    this.ui.addAction('テーマを休んで、自由に歩く', () => {
+      this.progress.exploration = chooseExploration(this.progress.exploration, null);
+      this.progress.preferences.destination = null; this.destination = undefined; this.route = [];
+      this.changed('発見はそのまま手帳に。今日は、予定のない散歩へ。'); this.ui.dialog.close(); this.updateNearby();
+    });
+  }
+
+  private appendPostcard(card: ReturnType<typeof observationCards>[number]): void {
+    const scenes: Record<ExplorationPlace, PostcardScene> = { plaza: 'park', beach: 'sea', summit: 'hill', station: 'station', home: 'home', 'w-cafe': 'town' };
+    this.ui.postcard({ ...card, place: card.name, scene: scenes[card.id] }, [
+      { label: card.favorite ? 'お気に入りから外す' : '大切な場所にする', pressed: card.favorite, action: () => {
+        this.progress.exploration = setFavorite(this.progress.exploration, card.favorite ? null : card.id);
+        this.changed(card.favorite ? 'お気に入りを外しました。景色の記録は残ります。' : `${card.name}を、また帰ってきたい場所にしました。`); this.postcardBook();
+      } },
+      { label: `${card.name}へまた行く`, action: () => this.guideAndClose(card.destinationId) },
+    ]);
+  }
+
+  private postcardBook(): void {
+    this.ui.page('あなたの、景色の絵はがき'); this.bookSections('絵はがき');
+    this.ui.addText('初めて立ち止まった日の天気と時間を、街のスケッチに添えて。何度訪ねても、最初の記録はここに残ります。');
+    const cards = observationCards(this.progress.exploration);
+    if (!cards.length) { this.ui.addText('まだ白いページです。散歩を選んでも、近くの公園で立ち止まっても。気になった景色を、最初の一枚にしよう。'); this.ui.addAction('散歩を選ぶ', () => this.explorationBook()); }
+    for (const card of [...cards].sort((a, b) => Number(b.favorite) - Number(a.favorite))) this.appendPostcard(card);
+  }
+
+  private depthRecords(): JournalRecord[] {
+    const records: JournalRecord[] = observationCards(this.progress.exploration).map(card => ({ id: `place-${card.id}`, title: card.title, body: `${card.name}。${card.body}`, day: card.day, minute: card.minute, kind: 'postcard' }));
+    for (const card of storyCards(this.progress.stories)) {
+      const arc = this.progress.stories.arcs.find(arc => arc.id === card.id)!;
+      records.push({ id: `story-${card.id}-start`, title: `${card.residentName}と、小さな約束`, body: `「${card.title}」で「${card.choiceLabel}」を選びました。`, day: arc.acceptedDay, minute: arc.acceptedMinute, kind: 'story' });
+      if (arc.observed) records.push({ id: `story-${card.id}-observed`, title: `「${card.title}」で見つけたこと`, body: card.observation ?? card.body, day: arc.observed.day, minute: arc.observed.minute, kind: 'story' });
+      if (arc.completedDay !== undefined) records.push({ id: `story-${card.id}-end`, title: `${card.residentName}に届いた言葉`, body: card.ending ?? card.body, day: arc.completedDay, minute: arc.completedMinute!, kind: 'story' });
+    }
+    return records.sort((a, b) => b.day - a.day || b.minute - a.minute);
+  }
+
+  private recordBook(): void {
+    this.ui.page('この街で過ごした日々'); this.bookSections('日々の記録');
+    const records = this.depthRecords();
+    if (!records.length) this.ui.addText('まだ書き出しの前。誰かの話を聞いたり、景色を見つけたりした時間が、このページにつながっていきます。');
+    else this.ui.timeline(records);
+    this.ui.addText('何も増えない日があっても大丈夫。街は、いつでも続きを待っています。');
+  }
+
+  private resumeSummary(): string {
+    const latest = this.depthRecords()[0], story = storyCards(this.progress.stories).find(card => card.stage !== 'completed');
+    const walk = explorationSuggestion(this.progress.exploration);
+    return `${latest ? `前回の記録：${latest.day}日目「${latest.title}」。` : '選んだ散歩の続きから。'}${story ? `${story.residentName}との続き：${story.nextStep}` : walk && !walk.complete ? `散歩の続き：${walk.body}` : '今度は、お気に入りに戻ったり、新しい過ごし方を選んでも。'}`;
+  }
+
+  private resumeBook(): void {
+    this.ui.page('おかえりなさい、桜の街へ');
+    this.ui.addText(this.resumeSummary());
+    const story = storyCards(this.progress.stories).find(card => card.stage !== 'completed');
+    const walk = explorationSuggestion(this.progress.exploration);
+    if (story) this.ui.addAction('物語の続きへ', () => this.guideAndClose(story.destinationId ?? story.residentId));
+    else if (walk?.destinationId) this.ui.addAction('散歩の続きへ', () => this.guideAndClose(walk.destinationId!));
+    if (this.progress.exploration.favorite) this.ui.addAction('大切な場所へ戻る', () => this.guideAndClose(this.progress.exploration.favorite!));
+    this.ui.addAction('別の過ごし方を選ぶ', () => this.explorationBook());
+    this.ui.addAction('そのまま街を歩く', () => this.ui.dialog.close());
   }
 
   settings(): void {
@@ -511,7 +797,8 @@ export class Gameplay {
   map(): void {
     const offer = this.progress.errand ? errandFor(this.progress.errand.resident) : undefined;
     const p = this.interiors.indoor ? this.player.resumePosition : this.player.position;
-    this.ui.map(p, this.places, this.destination?.id, offer?.shop, place => {
+    const places = this.destination && validResident(this.destination.id) ? [...this.places, this.destination] : this.places;
+    this.ui.map(p, places, this.destination?.id, offer?.shop, place => {
       this.chooseDestination(place.id);
       this.ui.message(this.interiors.indoor ? `外へ出たら${place.name}への案内を再開します。` : this.route.length || this.arrived(place) ? `${place.name}までの経路を案内します。矢印は次の角、地図には道のりを表示します。` : `${place.name}へ方角で案内します。安全な経路が見つからないため、道に出ると矢印を再計算します。`);
     }, this.route);

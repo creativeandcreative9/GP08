@@ -3,6 +3,8 @@ import { newLife, readLife, type LifeState } from './calendar';
 import { errandFor, SHOPS, validResident } from './errands';
 import { newJourney, readJourney, type JourneyState } from './journey';
 import { newPreferences, readPreferences, type PlayPreferences } from './preferences';
+import { newStories, readStories, type StoryState } from './stories';
+import { newExploration, readExploration, type ExplorationState } from './exploration';
 
 // Keep the original key so version-1 saves migrate in place without losing progress.
 export const SAVE_KEY = 'gp08.life.v1';
@@ -31,12 +33,15 @@ export interface Progress {
   completedErrands: string[];
   journey: JourneyState;
   preferences: PlayPreferences;
+  stories: StoryState;
+  exploration: ExplorationState;
 }
 
 export const newProgress = (): Progress => ({
   version: 3, life: newLife(), money: 1200, inventory: { dango: 0, tea: 0, onigiri: 0, coffee: 0 },
   greeted: [], boughtDango: false, ateDango: false, rewarded: false, position: null,
   errand: null, completedErrands: [], journey: newJourney(), preferences: newPreferences(),
+  stories: newStories(), exploration: newExploration(),
 });
 
 const record = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -70,11 +75,13 @@ export function parseProgress(raw: string | null): Progress | null {
     const life = v.version === 3 ? readLife(v.life) : newLife();
     const journey = readJourney(v.journey), preferences = readPreferences(v.preferences);
     if (!life || !journey || !preferences || journey.memories.some(m => m.day > life.day)) return null;
+    const stories = readStories(v.stories, life.day, life.minute), exploration = readExploration(v.exploration, life.day, life.minute);
+    if (!stories || !exploration || stories.arcs.some(arc => !(v.greeted as string[]).includes(arc.resident))) return null;
     return {
       version: 3, life, money: v.money, inventory: Object.fromEntries(ITEM_IDS.map(id => [id, inventory[id]])) as Progress['inventory'],
       greeted: [...new Set(v.greeted as string[])], boughtDango: v.boughtDango as boolean, ateDango: v.ateDango as boolean,
       rewarded: v.rewarded as boolean, position: v.position as Progress['position'],
-      errand, completedErrands, journey, preferences,
+      errand, completedErrands, journey, preferences, stories, exploration,
     };
   } catch { return null; }
 }

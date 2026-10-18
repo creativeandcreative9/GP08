@@ -1,4 +1,5 @@
 /** Optional assistance preferences migrate independently from money and game progress. */
+import { validResident } from './errands';
 export interface PlayPreferences {
   wayfinding: boolean;
   destination: string | null;
@@ -14,7 +15,7 @@ export function readPreferences(value: unknown): PlayPreferences | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   const p = value as Record<string, unknown>;
   if (typeof p.wayfinding !== 'boolean'
-    || (p.destination !== null && !DESTINATIONS.includes(p.destination as typeof DESTINATIONS[number]))
+    || (p.destination !== null && !DESTINATIONS.includes(p.destination as typeof DESTINATIONS[number]) && !validResident(p.destination))
     || !Number.isSafeInteger(p.nightHintDay) || (p.nightHintDay as number) < 0 || (p.nightHintDay as number) > 10000) return null;
   return { wayfinding: p.wayfinding, destination: p.destination as string | null, nightHintDay: p.nightHintDay as number };
 }

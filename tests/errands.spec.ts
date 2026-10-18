@@ -98,6 +98,7 @@ test('version-1 progress migrates without losing money, items, the first goal or
   const migrated = parseProgress(JSON.stringify(old))!;
   expect(migrated).toEqual({ ...old, version: 3, life: newProgress().life, errand: null, completedErrands: [],
     journey: { memories: [] }, preferences: { wayfinding: true, destination: null, nightHintDay: 0 },
+    stories: { arcs: [] }, exploration: { active: null, favorite: null, observations: [] },
   });
   acceptErrand(migrated, 'resident-1');
   const pending = parseProgress(JSON.stringify(migrated))!;

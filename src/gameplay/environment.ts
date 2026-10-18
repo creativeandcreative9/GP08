@@ -104,6 +104,18 @@ export class Environment {
     glass?.emissiveColor.copyFrom(Color3.Lerp(new Color3(.4, .26, .11), new Color3(.06, .08, .1), day));
     const night = day < .2;
     for (const lamp of this.lamps) lamp.setEnabled(night && !indoor);
-    for (const material of scene.materials) if (material.name.startsWith('cloudMat') && material instanceof StandardMaterial) material.emissiveColor.set(.18 + .82 * day, .2 + .8 * day, .3 + .7 * day);
+    // These painted clouds describe daylight. Fade them through twilight, then
+    // remove the cards entirely so neither their colour nor depth silhouettes
+    // cut across a clear night sky. Moon and stars keep their own visibility.
+    const cloudSun = Math.max(0, Math.min(1, (day - .12) / .35));
+    const cloudFade = cloudSun * cloudSun * (3 - 2 * cloudSun);
+    scene.getTransformNodeByName('clouds')?.setEnabled(cloudFade > 0);
+    for (const material of scene.materials) if (material.name.startsWith('cloudMat') && material instanceof StandardMaterial) {
+      material.emissiveColor.set(.18 + .82 * day, .2 + .8 * day, .3 + .7 * day);
+      // Diffuse and emissive share this atlas: keep its level unchanged to avoid
+      // multiplying the night dimming twice. Daylight remains level 1 / alpha .98.
+      if (material.emissiveTexture) material.emissiveTexture.level = 1;
+      material.alpha = .98 * cloudFade;
+    }
   }
 }

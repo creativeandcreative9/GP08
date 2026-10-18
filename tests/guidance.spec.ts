@@ -190,7 +190,10 @@ test('choosing the sea respects the player’s plan instead of repeating a diffe
   expect((await snapshot(page)).preferences.destination).toBeNull();
   await page.getByRole('button', { name: '暮らし', exact: true }).click();
   const dialog = page.getByRole('dialog');
-  expect((await dialog.getByRole('button').allTextContents()).slice(0, 3)).toEqual([
+  // Page navigation is separate from the three existing choices for today's walk.
+  await expect(dialog.getByRole('button', {
+    name: /^(?:住人に会いに公園へ|海辺で小さな発見を探す|自宅へ案内してもらう)$/,
+  })).toHaveText([
     '住人に会いに公園へ', '海辺で小さな発見を探す', '自宅へ案内してもらう',
   ]);
   await dialog.getByRole('button', { name: '海辺で小さな発見を探す', exact: true }).click();
